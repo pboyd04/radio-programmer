@@ -61,7 +61,7 @@ typedef struct
              * 1 = On Busy Channel
              * 2 = On Busy Channel with Wrong PL Code
              */
-            unsigned int busy_channel_lockout:2;  //Busy Channel Lockout -
+            unsigned int busy_channel_lockout:2;
             unsigned int rx_dpl_invert:1;
             unsigned int tx_dpl_invert:1;
             unsigned int unknown3:1;
@@ -97,7 +97,7 @@ typedef struct
              * 6 = 2 min
              * 7 = 3 min
              */
-            unsigned int timeout:3; //Timeout
+            unsigned int timeout:3;
             unsigned int unknown15:1;
             unsigned int unknown16:1;
             unsigned int unknown17:1;
@@ -106,8 +106,8 @@ typedef struct
             unsigned int tx_high_power:1;
             unsigned int tx_auto_power:1; 
             unsigned int unknown21:1;
-            unsigned int unknown22:1; //Compression/Expansion
-            unsigned int unknown23:1; //Compression/Expansion
+            unsigned int unknown22:1; /*Compression/Expansion*/
+            unsigned int unknown23:1; /*Compression/Expansion*/
             unsigned int unknown24:1;
             /*
              * Compression Type
@@ -115,7 +115,7 @@ typedef struct
              * 1 - Full Compression
              * 2 - AGC Mode
              */
-            unsigned int compression_type:2; //Compression/Expansion
+            unsigned int compression_type:2;
         } bitfield;
         unsigned int dword;
     } additional_squelch;
@@ -221,7 +221,7 @@ typedef struct
     motorola_program_info          original;
     unsigned char                  unknown2[0x5F];
     motorola_program_info          last;
-    unsigned char                  checksum; //?
+    unsigned char                  checksum;
     unsigned char                  unknown3[0x38];
     motorla_personality_assignment personality_assignments;
     unsigned char                  unknown4[5769];

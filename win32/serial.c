@@ -20,13 +20,14 @@ int isSerialPortPresent(const char* name)
     }
 }
 
+#define MAX_SERIAL_PORTS 10
+
 int getSerialPorts(_Out_ unsigned int* count, _Out_ char*** portnames)
 {
     char         portname[5];
     unsigned int i,j;
     unsigned int internal = 0;
-    char**       int_names = NULL;
-    char**       tmp;
+    char*        tmp_names[MAX_SERIAL_PORTS];
 
     if(!count || !portnames)
     {
@@ -35,57 +36,41 @@ int getSerialPorts(_Out_ unsigned int* count, _Out_ char*** portnames)
     *count = 0;
     *portnames = NULL;
 
-    for(i = 1; i < 10; i++)
+    for(i = 1; i < MAX_SERIAL_PORTS; i++)
     {
         sprintf_s(portname, sizeof(portname), "COM%u", i);
         if(isSerialPortPresent(portname))
         {
-            if(!int_names)
+            tmp_names[internal] = _strdup(portname);
+            if(!tmp_names[internal])
             {
-                int_names = calloc(1, sizeof(char*));
-                if(!int_names)
+                for(j = internal+1; j > 0; j--)
                 {
-                    return -1;
+                    free(tmp_names[j-1]);
                 }
-                int_names[0] = _strdup(portname);
-                if(!int_names[0])
-                {
-                    free(int_names);
-                    return -1;
-                }
-            }
-            else
-            {
-                tmp = calloc(internal+1, sizeof(char*));
-                if(!tmp)
-                {
-                    for(j = internal+1; j > 0; j--)
-                    {
-                        free(int_names[j-1]);
-                    }
-                    free(int_names);
-                    return -1;
-                }
-                memcpy(tmp, int_names, sizeof(char*)*internal);
-                tmp[internal] = _strdup(portname);
-                if(!tmp[internal])
-                {
-                    for(j = internal+1; j > 0; j--)
-                    {
-                        free(int_names[j-1]);
-                    }
-                    free(int_names);
-                    free(tmp);
-                    return -1;
-                }
-                free(int_names);
-                int_names = tmp;
+                return -1;
             }
             internal++;
         }
     }
+    if(internal)
+    {
+        *portnames = calloc(internal, sizeof(char*));
+        if(!(*portnames))
+        {
+            for(j = internal+1; j > 0; j--)
+            {
+                free(tmp_names[j-1]);
+            }
+            return -1;
+        }
+        memcpy((*portnames), tmp_names, sizeof(char*)*internal);
+    }
+    else
+    {
+        *portnames = NULL;
+    }
     *count = internal;
-    *portnames = int_names;
     return 0;
 }
 

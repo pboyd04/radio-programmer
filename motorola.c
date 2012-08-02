@@ -381,7 +381,6 @@ int main(int argc, char** argv)
     {
         offset+=i;
     }
-    //printbuffer(big_buff, offset);
     data[0] = 0xF2;
     data[1] = 0x23;
     data[2] = 0x0E;
@@ -415,10 +414,8 @@ int main(int argc, char** argv)
     printbuffer(buff.unknown3, sizeof(buff.unknown3));
     printf("Personality Assignments\n");
     printf("    Number of Personality Assignments %d\n", buff.personality_assignments.assignment_count);
-    printf("    Unknown %02x %02x %02x %02x\n", buff.personality_assignments.unknown[0], 
-                                                buff.personality_assignments.unknown[1], 
-                                                buff.personality_assignments.unknown[2], 
-                                                buff.personality_assignments.unknown[3]); 
+    printf("    Unknown %02x %02x\n", buff.personality_assignments.unknown[0], 
+                                      buff.personality_assignments.unknown[1]); 
     for(i = 0; i < buff.personality_assignments.assignment_count; i++)
     {
         printf("    Personality[%d] = %x\n", i, buff.personality_assignments.entries[i].personality);

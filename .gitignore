@@ -3,3 +3,5 @@
 /win32/*.exp
 /win32/getopt.dll
 /win32/radio.exe
+
+/linux/radio

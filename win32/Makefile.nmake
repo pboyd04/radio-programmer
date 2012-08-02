@@ -6,7 +6,7 @@ radio.exe: $(SRCS) getopt.dll
 	cl /Wall /wd4820 /wd4668 /wd4255 /wd4214 /analyze $(SRCS) $(INCS) /Fe$@
 
 getopt.dll: getopt.c
-	cl /Wall /wd4820 /wd4668 /wd4255 getopt.c /Fe$@ /LD
+	cl /Wall /wd4820 /wd4668 /wd4255 getopt.c /DEXPORTS_GETOPT /Fe$@ /LD
 
 clean: 
 	del radio.exe
