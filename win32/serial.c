@@ -107,10 +107,10 @@ int openport(const char* portname, void** com_port)
     return 0;
 }
 
-unsigned int write_serial(void* com_port, unsigned char* data, unsigned int datalen)
+size_t write_serial(void* com_port, unsigned char* data, size_t datalen)
 {
-    HANDLE       h;
-    unsigned int len = datalen;
+    HANDLE h;
+    DWORD  len = (DWORD)datalen;
 
     if(!com_port || !data || !datalen)
     {
@@ -118,17 +118,17 @@ unsigned int write_serial(void* com_port, unsigned char* data, unsigned int data
     }
 
     h = (HANDLE)com_port;
-    if(!WriteFile(h, data, datalen, (LPDWORD)&len, NULL))
+    if(!WriteFile(h, data, (DWORD)datalen, &len, NULL))
     {
         printf("%s: Last error: %x\n", __FUNCTION__, GetLastError());
     }
     return len;
 }
 
-unsigned int read_serial(void* com_port, unsigned char* data, unsigned int datalen)
+size_t read_serial(void* com_port, unsigned char* data, size_t datalen)
 {
-    HANDLE       h;
-    unsigned int len = 0;
+    HANDLE h;
+    DWORD  len = 0;
 
     if(!com_port || !data || !datalen)
     {
@@ -136,16 +136,16 @@ unsigned int read_serial(void* com_port, unsigned char* data, unsigned int datal
     }
 
     h = (HANDLE)com_port;
-    if(!ReadFile(h, data, datalen, (LPDWORD)&len, NULL))
+    if(!ReadFile(h, data, (DWORD)datalen, &len, NULL))
     {
         printf("%s: Last error: %x\n", __FUNCTION__, GetLastError());
     }
     return len;
 }
 
-unsigned int write_verify_read(void* com_port, unsigned char* in, unsigned int inlen, unsigned char* out, unsigned int outlen)
+size_t write_verify_read(void* com_port, unsigned char* in, size_t inlen, unsigned char* out, size_t outlen)
 {
-    unsigned int ret;
+    size_t        ret;
     unsigned char buf[4096];
 
     ret = write_serial(com_port, in, inlen);

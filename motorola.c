@@ -8,7 +8,10 @@
 #include "motorola.h"
 
 #ifdef _MSC_VER
+#include <BaseTsd.h>
 #define strdup _strdup
+
+typedef SSIZE_T ssize_t;
 
 #pragma comment(lib, "getopt.lib")
 #endif
@@ -20,26 +23,27 @@ unsigned char second_response[17] = {0x0F, 0xE5, 0x8E, 0xC1, 0x54, 0x19, 0x9D, 0
                                      0xD1, 0x80, 0x18, 0x00, 0x60, 0xB0, 0x3C, 0x8A, 
                                      0xFF};
 
-unsigned char big_buff[8192] = {0};
+unsigned char big_buff[8192];
 
 motorola_ht1250 buff;
 
-void motorola_calculate_checksum(unsigned char* cmd, unsigned int len)
+void motorola_calculate_checksum(unsigned char* cmd, size_t len)
 {
     unsigned char byte = 0;
-    unsigned int  i;
+    size_t        i;
 
     for(i = 0; i < len; i++)
     {
         byte += cmd[i];
     }
-    cmd[len] = 0xFF - byte;
+    cmd[len] = (unsigned char)((unsigned char)0xFF - (unsigned char)byte);
 }
 
-unsigned int valid_checksum(unsigned char* res, unsigned int len)
+unsigned int valid_checksum(unsigned char* res, size_t len)
 {
     unsigned char byte = 0;
-    unsigned int  i;
+    size_t        i;
+
     for(i = 0; i < len; i++)
     {
         byte += res[i];
@@ -55,42 +59,48 @@ unsigned int valid_checksum(unsigned char* res, unsigned int len)
     }
 }
 
-unsigned int motorola_send_cmd(void* com_port, unsigned char* cmd, unsigned int cmdlen, unsigned char* res, unsigned int reslen)
+ssize_t motorola_send_cmd(void* com_port, unsigned char* cmd, size_t cmdlen, /*@out@*/ unsigned char* res, size_t reslen)
 {
     unsigned char full_cmd[256];
     unsigned char full_res[256];
-    unsigned int  full_res_len = 0;
+    size_t        full_res_len = 0;
     unsigned int  front_strip  = 1;
-    unsigned int  ret;
+    size_t        ret;
     unsigned char status[1];
-    unsigned int  expected;
+    size_t        expected;
 
-    if(!cmd || cmdlen == 0 || cmdlen > 255 || !res || !reslen)
+    if(!cmd || cmdlen == 0 || cmdlen > 255 || !res || reslen == 0)
     {
-        return (unsigned int)-1;
+        if(res)
+        {
+            res[0] = 0;
+        }
+        return -1;
     }
+    memset(res, 0, reslen);
 
     memcpy(full_cmd, cmd, cmdlen);
     motorola_calculate_checksum(full_cmd, cmdlen);
     ret = write_verify_read(com_port, full_cmd, cmdlen+1, status, 1);
     if(ret != 1 || status[0] != 0x50) /*0x50 seems to be ok... 0x60 seems to be not ok*/
     {
-        read_serial(com_port, full_res, sizeof(full_res));
+        /*Read any data left on the serial port and start over...*/
+        (void)read_serial(com_port, full_res, sizeof(full_res));
         ret = write_verify_read(com_port, full_cmd, cmdlen+1, status, 1);
         if(ret != 1 || status[0] != 0x50) /*0x50 seems to be ok... 0x60 seems to be not ok*/
         {
-            printf("%s: Command failed (ret = %x, status[0] = %x)\n", __FUNCTION__, ret, status[0]);
+            printf("%s: Command failed (ret = %x, status[0] = %x)\n", __FUNCTION__, (unsigned int)ret, status[0]);
             printf("Command was: \n");
             printbuffer(full_cmd, cmdlen+1);
-            return (unsigned int)-1;
+            return -1;
         }
     }
     /*The next bit seems to indicate how many bytes are returned...*/
     ret = read_serial(com_port, full_res, 1);
     if(ret != 1)
     {
-        printf("%s: Failed to get response length (ret = %x)\n", __FUNCTION__, ret);
-        return (unsigned int)-1;
+        printf("%s: Failed to get response length (ret = %x)\n", __FUNCTION__, (unsigned int)ret);
+        return -1;
     }
     full_res_len = 1;
     if(full_res[0] == 0xFF)
@@ -100,21 +110,21 @@ unsigned int motorola_send_cmd(void* com_port, unsigned char* cmd, unsigned int 
     }
     else
     {
-        expected = (0xF & full_res[0])+1;
+        expected = (size_t)((0xF & full_res[0])+1);
     }
     if(reslen < expected)
     {
-        return (unsigned int)-1;
+        return -1;
     }
     if(expected >= (sizeof(full_res)-full_res_len))
     {
-        return (unsigned int)-1;
+        return -1;
     }
     ret = read_serial(com_port, full_res+full_res_len, expected);
     if(ret != expected)
     {
-        printf("%s: Failed to get expected length (ret = %x)\n", __FUNCTION__, ret);
-        return (unsigned int)-1;
+        printf("%s: Failed to get expected length (ret = %x)\n", __FUNCTION__, (unsigned int)ret);
+        return -1;
     }
     full_res_len += ret;
     if(full_res[0] == 0xFF)
@@ -122,35 +132,35 @@ unsigned int motorola_send_cmd(void* com_port, unsigned char* cmd, unsigned int 
         /* This reponse looks something like 0x8X00NN
          * I don't know what X means
            NN is the bytes in this response */
-        expected = full_res[2+(full_res_len-ret)];
+        expected = (size_t)(full_res[2+(full_res_len-ret)]);
         if(reslen < expected)
         {
-            return (unsigned int)-1;
+            return -1;
         }
         ret = read_serial(com_port, full_res+full_res_len, expected);
         if(ret != expected)
         {
-            printf("%s: Failed to get second length (ret = %x, expected = %x)\n", __FUNCTION__, ret, expected);
+            printf("%s: Failed to get second length (ret = %x, expected = %x)\n", __FUNCTION__, (unsigned int)ret, (unsigned int)expected);
             printbuffer(full_res+full_res_len, expected);
-            return (unsigned int)-1;
+            return -1;
         }
         full_res_len += ret;
         front_strip += 3;
     }
-    if(!valid_checksum(full_res, full_res_len))
+    if(valid_checksum(full_res, full_res_len) != 0)
     {
         printf("%s: Invalid Checksum\n", __FUNCTION__);
         printbuffer(full_res, full_res_len);
-        return (unsigned int)-1;
+        return -1;
     }
     memcpy(res, full_res+front_strip, expected-1);
-    return expected-1;
+    return (ssize_t)(expected-1);
 }
 
-unsigned int motorola_read_data(void* com_port, unsigned int offset, unsigned char* res, unsigned int reslen)
+ssize_t motorola_read_data(void* com_port, size_t offset, unsigned char* res, size_t reslen)
 {
     unsigned char cmd[6];
-    unsigned int  ret;
+    ssize_t       ret;
     unsigned char bigres[256];
 
     cmd[0] = 0xF5;
@@ -160,49 +170,61 @@ unsigned int motorola_read_data(void* com_port, unsigned int offset, unsigned ch
     cmd[4] = (unsigned char)(offset >> 8);
     cmd[5] = (unsigned char)offset;
     ret = motorola_send_cmd(com_port, cmd, sizeof(cmd), bigres, sizeof(bigres));
-    if(ret == (unsigned int)-1)
+    if(ret == -1)
     {
         return ret;
     }
-    if(ret-3 > reslen)
+    if((size_t)(ret-3) > reslen)
     {
-        return (unsigned int)-1;
+        return -1;
     }
-    memmove(res, bigres+3, ret-3);
+    memcpy(res, bigres+3, (size_t)(ret-3));
     return ret-3;
 }
 
-unsigned int motorola_read_data2(void* com_port, unsigned int start_offset, unsigned int step, unsigned int length, unsigned char* res, unsigned int reslen)
+ssize_t motorola_read_data2(void* com_port, size_t start_offset, unsigned int step, size_t length, unsigned char* res, size_t reslen)
 {
-    unsigned int offset;
-    unsigned int my_offset = 0;
-    unsigned int ret;
+    size_t  offset;
+    size_t  my_offset = 0;
+    ssize_t ret;
 
     for(offset = start_offset; offset < start_offset+length; offset+=step)
     {
         ret = motorola_read_data(com_port, offset, res+my_offset, reslen-my_offset);
-	if(ret == (unsigned int)-1)
-	{
+        if(ret == -1)
+        {
             return ret;
-	}
-	my_offset+=ret;
+        }
+        my_offset+=ret;
     }
-    return my_offset;
+    return (ssize_t)my_offset;
 }
 
-unsigned int motorola_read_fw_ver(void* com_port, char** fw_ver)
+int motorola_read_fw_ver(void* com_port, /*@out@*/ char** fw_ver)
 {
     unsigned char cmd[3];
-    unsigned int  ret;
+    ssize_t       ret;
     unsigned char data[12];
+
+    if(!fw_ver)
+    {
+        /*@-mustdefine@*/
+        return -1;
+        /*@+mustdefine@*/
+    }
+    *fw_ver = NULL;
+    if(!com_port)
+    {
+        return -1;
+    }
 
     cmd[0] = 0xF2;
     cmd[1] = 0x23;
     cmd[2] = 0x03;
     ret = motorola_send_cmd(com_port, cmd, sizeof(cmd), data, sizeof(data));
-    if(ret == (unsigned int)-1)
+    if(ret == -1)
     {
-        return (unsigned int)-1; 
+        return -1; 
     }
     data[11] = 0;
     /* Data[0] == 0x8B
@@ -218,6 +240,7 @@ typedef struct
     unsigned char value;
 } code_str_map;
 
+/*@ignore@*/
 static struct option long_options[] =
 {
     {"verbose", no_argument,       &verbose_flag, 2},
@@ -227,7 +250,9 @@ static struct option long_options[] =
 	{"version", no_argument,       0,             'V'},
 	{0, 0, 0, 0}
 };
+/*@end@*/
 
+/*@constant static char* VERSION;@*/
 #define VERSION "0.1"
 
 void help(const char* progname)
@@ -253,14 +278,15 @@ int main(int argc, char** argv)
 {
     char**        portnames = NULL;
     unsigned int  portcount = 0;
+    ssize_t       ret;
     unsigned int  i, j;
     char*         selected_port = NULL;
     void*         comm;
     unsigned char data[256];
     unsigned char output[256];
     size_t        offset = 0;
-    unsigned short first_offset;
-    unsigned short next_offset;
+    size_t        first_offset;
+    size_t        next_offset;
     char*          fw_ver;
     int            arg;
     int            opt_index = 0;
@@ -272,9 +298,15 @@ int main(int argc, char** argv)
     motorola_scan_list* scan;
     motorola_scan_list_members* scan_members;
 
+    memset(big_buff, 0, sizeof(big_buff));
+
     if(argc < 2)
     {
-        getSerialPorts(&portcount, &portnames);
+        if((getSerialPorts(&portcount, &portnames) != 0) || portnames == NULL)
+        {
+            fprintf(stderr, "Error obtaining port names for system\n");
+            return -1;
+        }
         printf("Ports: ");
         for(i = 0; i < portcount; i++)
         {
@@ -310,87 +342,112 @@ int main(int argc, char** argv)
             }
         }
     }
+    if(selected_port == NULL)
+    {
+        fprintf(stderr, "No port selected!\n");
+        if((getSerialPorts(&portcount, &portnames) != 0) || portnames == NULL)
+        {
+            fprintf(stderr, "Error obtaining port names for system\n");
+            return -1;
+        }
+        fprintf(stderr, "Valid Ports: ");
+        for(i = 0; i < portcount; i++)
+        {
+            fprintf(stderr, "%s ", portnames[i]);
+        }
+        fprintf(stderr, "\n");
+        for(i = 0; i < portcount; i++)
+        {
+            free(portnames[i]);
+        }
+        free(portnames);
+        return -1;
+    }
 
-    openport(selected_port, &comm);
+    if(openport(selected_port, &comm) != 0)
+    {
+        fprintf(stderr, "Error opening serial port %s!\n", selected_port);
+        return -1;
+    }
     data[0] = 0xF2;
     data[1] = 0x23;
     data[2] = 0x05;
-    i = motorola_send_cmd(comm, data, 3, output, sizeof(output));
+    ret = motorola_send_cmd(comm, data, 3, output, sizeof(output));
     /*This is some sort capabilities command... I will need to get other responses than
      *0x8B05007C to figure out what this really is...*/
-    if(i != sizeof(first_response) || memcmp(first_response, output, i))
+    if((size_t)ret != sizeof(first_response) || (memcmp(first_response, output, (size_t)ret) != 0))
     {
-        printf("%s(%d): Read %x bytes\n", __FUNCTION__, __LINE__, i);
-        if(i != (unsigned int)-1)
+        printf("%s(%d): Read %x bytes\n", __FUNCTION__, __LINE__, (unsigned int)ret);
+        if(ret != -1)
         {
-            printbuffer(output, i);
+            printbuffer(output, (size_t)ret);
         } 
         return -1;
     }
     data[0] = 0xF2;
     data[1] = 0x23;
     data[2] = 0x0F;
-    i = motorola_send_cmd(comm, data, 3, output, sizeof(output));
-    if(i != sizeof(second_response) || memcmp(second_response, output, i))
+    ret = motorola_send_cmd(comm, data, 3, output, sizeof(output));
+    if((size_t)ret != sizeof(second_response) || (memcmp(second_response, output, (size_t)ret) != 0))
     {
-        printf("%s(%d): Read %x bytes\n", __FUNCTION__, __LINE__, i);
-        if(i != (unsigned int)-1)
+        printf("%s(%d): Read %x bytes\n", __FUNCTION__, __LINE__, (unsigned int)ret);
+        if(ret != -1)
         {
-            printbuffer(output, i);
+            printbuffer(output, (size_t)ret);
         }
         return -1; 
     }
-    i = motorola_read_data(comm, 0x02000000, output, sizeof(output)); 
-    if(i == (unsigned int)-1)
+    ret = motorola_read_data(comm, 0x02000000, output, sizeof(output)); 
+    if(ret == -1)
     {
         return -1;
     }
-    first_offset = be16toh_array(output);
-    i = motorola_read_data(comm, 0x02000000+first_offset, output, sizeof(output)); 
-    if(i == (unsigned int)-1)
+    first_offset = (size_t)be16toh_array(output);
+    ret = motorola_read_data(comm, 0x02000000+first_offset, output, sizeof(output)); 
+    if(ret == -1)
     { 
         return -1;
     }
-    next_offset = be16toh_array(output)+first_offset;
-    i = motorola_read_data(comm, 0x02000000+next_offset, output, sizeof(output)); 
-    if(i == (unsigned int)-1)
+    next_offset = (size_t)be16toh_array(output)+first_offset;
+    ret = motorola_read_data(comm, 0x02000000+next_offset, output, sizeof(output)); 
+    if(ret == -1)
     {
         return -1;
     }
     else
     {
-        memcpy(big_buff+offset, output, i);
-        offset+=i;
+        memcpy(big_buff+offset, output, (size_t)ret);
+        offset+=ret;
     }
-    i = motorola_read_data(comm, 0x02000000+next_offset+2, output, sizeof(output)); 
-    if(i == (unsigned int)-1)
+    ret = motorola_read_data(comm, 0x02000000+next_offset+2, output, sizeof(output)); 
+    if(ret == -1)
     { 
         return -1;
     }
     else
     {
-        memcpy(big_buff+offset, output, i);
-        offset+=i;
+        memcpy(big_buff+offset, output, (size_t)ret);
+        offset+=ret;
     }
-    i = motorola_read_data2(comm, 0x20000280, 0x20, 0x1760, big_buff, sizeof(big_buff));
-    if(i == (unsigned int)-1)
+    ret = motorola_read_data2(comm, 0x20000280, 0x20, 0x1760, big_buff, sizeof(big_buff));
+    if(ret == -1)
     {
         return -1;
     }
     else
     {
-        offset+=i;
+        offset+=(size_t)ret;
     }
     data[0] = 0xF2;
     data[1] = 0x23;
     data[2] = 0x0E;
-    i = motorola_send_cmd(comm, data, 3, output, sizeof(output));
-    printf("%s(%d): Read %x bytes\n", __FUNCTION__, __LINE__, i);
-    if(i != (unsigned int)-1)
+    ret = motorola_send_cmd(comm, data, 3, output, sizeof(output));
+    printf("%s(%d): Read %x bytes\n", __FUNCTION__, __LINE__, (unsigned int)ret);
+    if(ret != -1)
     {
-        printbuffer(output, i);
+        printbuffer(output, (size_t)ret);
     }
-    motorola_read_fw_ver(comm, &fw_ver);
+    (void)motorola_read_fw_ver(comm, &fw_ver);
     printf("fw_ver = %s\n", fw_ver);
     memcpy(&buff, big_buff, sizeof(buff));
     printbuffer(buff.unknown, sizeof(buff.unknown));
@@ -418,9 +475,9 @@ int main(int argc, char** argv)
                                       buff.personality_assignments.unknown[1]); 
     for(i = 0; i < buff.personality_assignments.assignment_count; i++)
     {
-        printf("    Personality[%d] = %x\n", i, buff.personality_assignments.entries[i].personality);
-        printf("    Unknown1[%d] = %x\n", i, buff.personality_assignments.entries[i].unknown[0]);
-        printf("    Unknown2[%d] = %x\n", i, buff.personality_assignments.entries[i].unknown[1]);
+        printf("    Personality[%u] = %x\n", i, buff.personality_assignments.entries[i].personality);
+        printf("    Unknown1[%u] = %x\n", i, buff.personality_assignments.entries[i].unknown[0]);
+        printf("    Unknown2[%u] = %x\n", i, buff.personality_assignments.entries[i].unknown[1]);
     }
     tmp_ptr = (unsigned char*)&(buff.personality_assignments.entries[i]);
     printbuffer(tmp_ptr, 2);
@@ -430,13 +487,18 @@ int main(int argc, char** argv)
     printf("    Size of Personality Assignment Strings %d\n", string_struct->string_size);
     printf("    Number of Personality Assignment Strings %d\n", string_struct->string_count);
     printf("    Unknown %02x %02x %02x\n", string_struct->unknown[0], string_struct->unknown[1], string_struct->unknown[2]);
-    string_storage = calloc(string_struct->string_size+1, sizeof(char));
+    string_storage = calloc((size_t)(string_struct->string_size+1), sizeof(char));
+    if(!string_storage)
+    {
+        fprintf(stderr, "Error allocating memory\n");
+        abort();
+    }
     string_ptr = string_struct->string;
     for(i = 0; i < string_struct->string_count; i++)
     {
-        memcpy(string_storage, string_ptr, string_struct->string_size);
+        memcpy(string_storage, string_ptr, (size_t)string_struct->string_size);
         string_ptr+=string_struct->string_size;
-        printf("String[%d] = %s\n", i, string_storage);
+        printf("String[%u] = %s\n", i, string_storage);
     }
     tmp_ptr = (unsigned char*)string_ptr;
     printbuffer(tmp_ptr, 0x27B);
@@ -448,7 +510,7 @@ int main(int argc, char** argv)
     {
         scan = (motorola_scan_list*)tmp_ptr;
         tmp_ptr+=sizeof(motorola_scan_list);
-        printf("Scan List %d\n", i);
+        printf("Scan List %u\n", i);
         printf("    PL Scan Lockout              = %x\n", scan->options.bitfield.pl_scan_lockout);
         printf("    Unknown1                     = %x\n", scan->options.bitfield.unknown1);
         printf("    PL Scan Type                 = %x\n", scan->options.bitfield.pl_scan_type);
@@ -472,17 +534,17 @@ int main(int argc, char** argv)
     {
         scan_members = (motorola_scan_list_members*)tmp_ptr;
         tmp_ptr+=sizeof(motorola_scan_list_members);
-        printf("Scan List %d Members\n", i);
+        printf("Scan List %u Members\n", i);
         printbuffer(scan_members->unknown, sizeof(scan_members->unknown));
-        printf("    Member Entry Count %d\n", scan_members->entry_count);
+        printf("    Member Entry Count %u\n", scan_members->entry_count);
         for(j = 0; j < scan_members->entry_count; j++)
         {
-            printf("    Member Personality %d Type = %x\n", j, scan_members->entires[j].personality_type);
-            printf("    Member Personality %d ID   = %x\n", j, scan_members->entires[j].personality_id);
+            printf("    Member Personality %u Type = %x\n", j, scan_members->entires[j].personality_type);
+            printf("    Member Personality %u ID   = %x\n", j, scan_members->entires[j].personality_id);
         }
         tmp_ptr+=sizeof(motorola_scan_list_member_entry)*(j-1);
     }
-    offset = 0xA7 - (0x07*arg);
+    offset = (size_t)(0xA7 - (0x07*arg));
     printbuffer(tmp_ptr, offset);
     tmp_ptr += offset;
     arg = *tmp_ptr;
@@ -490,7 +552,7 @@ int main(int argc, char** argv)
     for(i = 0; i < (unsigned int)arg; i++)
     {
         freq = (motorola_frequency*)tmp_ptr;
-        printf("Frequency %d\n", i);
+        printf("Frequency %u\n", i);
         printbuffer(freq->unknown, sizeof(freq->unknown));
         printf("    Unknown %x\n", freq->unknown2);
         printf("    Bandwidth = ");
@@ -577,11 +639,14 @@ int main(int argc, char** argv)
     }
     printbuffer(tmp_ptr, sizeof(buff.unknown4)-(tmp_ptr - buff.unknown4));
 
-    for(i = 0; i < portcount; i++)
+    if(portnames)
     {
-        free(portnames[i]);
+        for(i = 0; i < portcount; i++)
+        {
+            free(portnames[i]);
+        }
+        free(portnames);
     }
-    free(portnames);
 
     return 0;
 }

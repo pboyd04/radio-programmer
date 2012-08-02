@@ -11,10 +11,10 @@
 
 int isSerialPortPresent(const char* name);
 int getSerialPorts(OUTPARAM unsigned int* count, OUTPARAM char*** portnames);
-int openport(const char* portname, void** com_port);
-unsigned int write_serial(void* com_port, unsigned char* data, unsigned int datalen);
-unsigned int read_serial(void* com_port, unsigned char* data, unsigned int datalen);
-unsigned int write_verify_read(void* com_port, unsigned char* in, unsigned int inlen, unsigned char* out, unsigned int outlen);
+int openport(const char* portname, /*@out@*/ void** com_port);
+size_t write_serial(void* com_port, unsigned char* data, size_t datalen);
+size_t read_serial(void* com_port, /*@out@*/ unsigned char* data, size_t datalen);
+size_t write_verify_read(void* com_port, unsigned char* in, size_t inlen, /*@out@*/ unsigned char* out, size_t outlen);
 int closeport(void* com_port);
 
 #endif

@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <fcntl.h>
+#ifndef S_SPLINT_S
+/*unistd.h breaks some version of SPLint, so exclude it when running lint*/
 #include <unistd.h>
+#endif
 #include <termios.h>
 #include <stdlib.h>
 #include <string.h>
@@ -96,22 +99,21 @@ int openport(const char* portname, void** com_port)
     return 0;
 }
 
-unsigned int write_serial(void* com_port, unsigned char* data, unsigned int datalen)
+size_t write_serial(void* com_port, unsigned char* data, size_t datalen)
 {
-    int          fd;
-    unsigned int len;
+    int    fd;
+    size_t len;
 
     fd = (int)(size_t)com_port;
     len = write(fd, data, datalen);
     if(len != datalen)
     {
-        printf("fd = %x, data = %p, datalen = %x\n", fd, data, datalen);
         printf("Last error: %x\n", errno);
     }
     return len;
 }
 
-unsigned int read_serial(void* com_port, unsigned char* data, unsigned int datalen)
+size_t read_serial(void* com_port, unsigned char* data, size_t datalen)
 {
     int          fd;
 
@@ -119,9 +121,9 @@ unsigned int read_serial(void* com_port, unsigned char* data, unsigned int datal
     return read(fd, data, datalen);
 }
 
-unsigned int write_verify_read(void* com_port, unsigned char* in, unsigned int inlen, unsigned char* out, unsigned int outlen)
+size_t write_verify_read(void* com_port, unsigned char* in, size_t inlen, unsigned char* out, size_t outlen)
 {
-    unsigned int ret;
+    size_t        ret;
     unsigned char buf[4096];
 
     ret = write_serial(com_port, in, inlen);
@@ -132,7 +134,11 @@ unsigned int write_verify_read(void* com_port, unsigned char* in, unsigned int i
     ret = read_serial(com_port, buf, inlen+outlen);
     if(ret < inlen || memcmp(in, buf, inlen))
     {
+#ifdef __x86_64
+        printf("%s: Read %lx bytes\n", __FUNCTION__, ret);
+#else
         printf("%s: Read %x bytes\n", __FUNCTION__, ret);
+#endif
         printbuffer(buf, ret); 
         return (unsigned int)-1;
     }
