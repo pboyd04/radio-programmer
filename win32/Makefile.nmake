@@ -3,7 +3,7 @@ SRCS=../bytes.c ../motorola.c ../debug.c serial.c
 INCS=-I.
 
 radio.exe: $(SRCS) getopt.dll
-	cl /Wall /wd4820 /wd4668 /wd4255 /analyze $(SRCS) $(INCS) /Fe$@
+	cl /Wall /wd4820 /wd4668 /wd4255 /wd4214 /analyze $(SRCS) $(INCS) /Fe$@
 
 getopt.dll: getopt.c
 	cl /Wall /wd4820 /wd4668 /wd4255 getopt.c /Fe$@ /LD

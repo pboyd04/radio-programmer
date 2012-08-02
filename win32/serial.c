@@ -20,14 +20,20 @@ int isSerialPortPresent(const char* name)
     }
 }
 
-int getSerialPorts(unsigned int* count, char*** portnames)
+int getSerialPorts(_Out_ unsigned int* count, _Out_ char*** portnames)
 {
     char         portname[5];
     unsigned int i,j;
-
     unsigned int internal = 0;
     char**       int_names = NULL;
     char**       tmp;
+
+    if(!count || !portnames)
+    {
+        return -1;
+    }
+    *count = 0;
+    *portnames = NULL;
 
     for(i = 1; i < 10; i++)
     {
@@ -121,10 +127,14 @@ unsigned int write_serial(void* com_port, unsigned char* data, unsigned int data
     HANDLE       h;
     unsigned int len = datalen;
 
+    if(!com_port || !data || !datalen)
+    {
+        return (unsigned int)-1;
+    }
+
     h = (HANDLE)com_port;
     if(!WriteFile(h, data, datalen, (LPDWORD)&len, NULL))
     {
-        printf("%s: h = %p, data = %p, datalen = %x\n", __FUNCTION__, h, data, datalen);
         printf("%s: Last error: %x\n", __FUNCTION__, GetLastError());
     }
     return len;
@@ -135,10 +145,14 @@ unsigned int read_serial(void* com_port, unsigned char* data, unsigned int datal
     HANDLE       h;
     unsigned int len = 0;
 
+    if(!com_port || !data || !datalen)
+    {
+        return (unsigned int)-1;
+    }
+
     h = (HANDLE)com_port;
     if(!ReadFile(h, data, datalen, (LPDWORD)&len, NULL))
     {
-        printf("%s: h = %p, data = %p, datalen = %x\n", __FUNCTION__, h, data, datalen);
         printf("%s: Last error: %x\n", __FUNCTION__, GetLastError());
     }
     return len;
@@ -171,4 +185,4 @@ int closeport(void* com_port)
     return CloseHandle((HANDLE)com_port);
 }
 
-
+/* vim: set tabstop=4 shiftwidth=4 expandtab: */

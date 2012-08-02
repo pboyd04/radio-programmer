@@ -1,0 +1,5 @@
+/win32/*.obj
+/win32/*.lib
+/win32/*.exp
+/win32/getopt.dll
+/win32/radio.exe

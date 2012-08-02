@@ -1,9 +1,11 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
 #include "serial.h"
 #include "bytes.h"
 #include "debug.h"
+#include "motorola.h"
 
 #ifdef _MSC_VER
 #define strdup _strdup
@@ -15,10 +17,12 @@ int verbose_flag = 1;
 
 unsigned char first_response[3] = {0x8B, 0x05, 0x00};
 unsigned char second_response[17] = {0x0F, 0xE5, 0x8E, 0xC1, 0x54, 0x19, 0x9D, 0x11, 
-	                             0xD1, 0x80, 0x18, 0x00, 0x60, 0xB0, 0x3C, 0x8A, 
-				     0xFF};
+                                     0xD1, 0x80, 0x18, 0x00, 0x60, 0xB0, 0x3C, 0x8A, 
+                                     0xFF};
 
 unsigned char big_buff[8192] = {0};
+
+motorola_ht1250 buff;
 
 void motorola_calculate_checksum(unsigned char* cmd, unsigned int len)
 {
@@ -71,10 +75,15 @@ unsigned int motorola_send_cmd(void* com_port, unsigned char* cmd, unsigned int 
     ret = write_verify_read(com_port, full_cmd, cmdlen+1, status, 1);
     if(ret != 1 || status[0] != 0x50) /*0x50 seems to be ok... 0x60 seems to be not ok*/
     {
-        printf("%s: Command failed (ret = %x, status[0] = %x)\n", __FUNCTION__, ret, status[0]);
-        printf("Command was: \n");
-        printbuffer(full_cmd, cmdlen+1);
-        return (unsigned int)-1;
+        read_serial(com_port, full_res, sizeof(full_res));
+        ret = write_verify_read(com_port, full_cmd, cmdlen+1, status, 1);
+        if(ret != 1 || status[0] != 0x50) /*0x50 seems to be ok... 0x60 seems to be not ok*/
+        {
+            printf("%s: Command failed (ret = %x, status[0] = %x)\n", __FUNCTION__, ret, status[0]);
+            printf("Command was: \n");
+            printbuffer(full_cmd, cmdlen+1);
+            return (unsigned int)-1;
+        }
     }
     /*The next bit seems to indicate how many bytes are returned...*/
     ret = read_serial(com_port, full_res, 1);
@@ -121,7 +130,7 @@ unsigned int motorola_send_cmd(void* com_port, unsigned char* cmd, unsigned int 
         ret = read_serial(com_port, full_res+full_res_len, expected);
         if(ret != expected)
         {
-            printf("%s: Failed to get second length (ret = %x)\n", __FUNCTION__, ret);
+            printf("%s: Failed to get second length (ret = %x, expected = %x)\n", __FUNCTION__, ret, expected);
             printbuffer(full_res+full_res_len, expected);
             return (unsigned int)-1;
         }
@@ -196,9 +205,18 @@ unsigned int motorola_read_fw_ver(void* com_port, char** fw_ver)
         return (unsigned int)-1; 
     }
     data[11] = 0;
+    /* Data[0] == 0x8B
+     * Data[1] == 0x03 
+     * I don't know what these mean */
     *fw_ver = strdup((const char*)data+2);
     return 0;
 }
+
+typedef struct
+{
+    const char*   str;
+    unsigned char value;
+} code_str_map;
 
 static struct option long_options[] =
 {
@@ -233,9 +251,9 @@ void version()
 
 int main(int argc, char** argv)
 {
-    char**        portnames;
+    char**        portnames = NULL;
     unsigned int  portcount = 0;
-    unsigned int  i;
+    unsigned int  i, j;
     char*         selected_port = NULL;
     void*         comm;
     unsigned char data[256];
@@ -246,6 +264,13 @@ int main(int argc, char** argv)
     char*          fw_ver;
     int            arg;
     int            opt_index = 0;
+    unsigned char* tmp_ptr;
+    motorola_string_struct* string_struct;
+    char*          string_ptr;
+    char*          string_storage;
+    motorola_frequency* freq;
+    motorola_scan_list* scan;
+    motorola_scan_list_members* scan_members;
 
     if(argc < 2)
     {
@@ -262,6 +287,11 @@ int main(int argc, char** argv)
         }
         else
         {
+            for(i = 0; i < portcount; i++)
+            {
+                free(portnames[i]);
+            }
+            free(portnames);
             return 0;
         }
     }
@@ -351,7 +381,7 @@ int main(int argc, char** argv)
     {
         offset+=i;
     }
-    printbuffer(big_buff, offset);
+    //printbuffer(big_buff, offset);
     data[0] = 0xF2;
     data[1] = 0x23;
     data[2] = 0x0E;
@@ -363,6 +393,198 @@ int main(int argc, char** argv)
     }
     motorola_read_fw_ver(comm, &fw_ver);
     printf("fw_ver = %s\n", fw_ver);
+    memcpy(&buff, big_buff, sizeof(buff));
+    printbuffer(buff.unknown, sizeof(buff.unknown));
+    printf("Serial Number = %s\n", buff.serial_num);
+    printf("Model Number = %s\n", buff.model_num);
+    printf("Original Programing\n");
+    printf("    Code Plug Major Version = %x\n", buff.original.code_plug_major);
+    printf("    Code Plug Minor Version = %x\n", buff.original.code_plug_minor);
+    printf("    Code Plug Source = %x\n", buff.original.source);
+    printf("    Date/Time = %x/%x/%02x%02x %02x:%02x\n", buff.original.date_time.month, buff.original.date_time.day,
+                                                     buff.original.date_time.year[0], buff.original.date_time.year[1],
+                                                     buff.original.date_time.hour, buff.original.date_time.min);
+    printbuffer(buff.unknown2, sizeof(buff.unknown2));
+    printf("Latest Programing\n");
+    printf("    Code Plug Major Version = %x\n", buff.last.code_plug_major);
+    printf("    Code Plug Minor Version = %x\n", buff.last.code_plug_minor);
+    printf("    Code Plug Source = %x\n", buff.last.source);
+    printf("    Date/Time = %x/%x/%02x%02x %02x:%02x\n", buff.last.date_time.month, buff.last.date_time.day,
+                                                     buff.last.date_time.year[0], buff.last.date_time.year[1],
+                                                     buff.last.date_time.hour, buff.last.date_time.min);
+    printbuffer(buff.unknown3, sizeof(buff.unknown3));
+    printf("Personality Assignments\n");
+    printf("    Number of Personality Assignments %d\n", buff.personality_assignments.assignment_count);
+    printf("    Unknown %02x %02x %02x %02x\n", buff.personality_assignments.unknown[0], 
+                                                buff.personality_assignments.unknown[1], 
+                                                buff.personality_assignments.unknown[2], 
+                                                buff.personality_assignments.unknown[3]); 
+    for(i = 0; i < buff.personality_assignments.assignment_count; i++)
+    {
+        printf("    Personality[%d] = %x\n", i, buff.personality_assignments.entries[i].personality);
+        printf("    Unknown1[%d] = %x\n", i, buff.personality_assignments.entries[i].unknown[0]);
+        printf("    Unknown2[%d] = %x\n", i, buff.personality_assignments.entries[i].unknown[1]);
+    }
+    tmp_ptr = (unsigned char*)&(buff.personality_assignments.entries[i]);
+    printbuffer(tmp_ptr, 2);
+    tmp_ptr += 2;
+    string_struct = (motorola_string_struct*)tmp_ptr;
+    printf("Personality Assignment Strings\n");
+    printf("    Size of Personality Assignment Strings %d\n", string_struct->string_size);
+    printf("    Number of Personality Assignment Strings %d\n", string_struct->string_count);
+    printf("    Unknown %02x %02x %02x\n", string_struct->unknown[0], string_struct->unknown[1], string_struct->unknown[2]);
+    string_storage = calloc(string_struct->string_size+1, sizeof(char));
+    string_ptr = string_struct->string;
+    for(i = 0; i < string_struct->string_count; i++)
+    {
+        memcpy(string_storage, string_ptr, string_struct->string_size);
+        string_ptr+=string_struct->string_size;
+        printf("String[%d] = %s\n", i, string_storage);
+    }
+    tmp_ptr = (unsigned char*)string_ptr;
+    printbuffer(tmp_ptr, 0x27B);
+    tmp_ptr += 0x27B;
+    arg = *tmp_ptr;
+    printf("Scan List Count = %d\n", *tmp_ptr);
+    tmp_ptr++;
+    for(i = 0; i < (unsigned int)arg; i++)
+    {
+        scan = (motorola_scan_list*)tmp_ptr;
+        tmp_ptr+=sizeof(motorola_scan_list);
+        printf("Scan List %d\n", i);
+        printf("    PL Scan Lockout              = %x\n", scan->options.bitfield.pl_scan_lockout);
+        printf("    Unknown1                     = %x\n", scan->options.bitfield.unknown1);
+        printf("    PL Scan Type                 = %x\n", scan->options.bitfield.pl_scan_type);
+        printf("    Signaling Type               = %x\n", scan->options.bitfield.signaling_type);
+        printf("    User Programmable            = %x\n", scan->options.bitfield.user_programmable);
+        printf("    Nuisance Delete              = %x\n", scan->options.bitfield.nuisance_delete);
+        printf("    Sample Time                  = %x\n", scan->options.bitfield.sample_time);
+        printf("    Priority 2                   = %x\n", scan->options.bitfield.priority2);
+        printf("    Priority 1                   = %x\n", scan->options.bitfield.priority1);
+        printf("    Unknown15                    = %x\n", scan->options.bitfield.unknown15);
+        printf("    Signaling Hold Time          = %x\n", scan->options.bitfield.signaling_hold_time);
+        printf("    Tx Personality Type          = %x\n", scan->options.bitfield.personality);
+        printf("    Talkback                     = %x\n", scan->options.bitfield.talkback);
+        printf("    Trunk Group                  = %x\n", scan->options.bitfield.trunk_group);
+        printf("    Unknown31                    = %x\n", scan->options.bitfield.unknown31);
+        printf("    Tx Conventional Personality  = %x\n", scan->tx_conventional_personality);
+        printf("    LS Scan Activity Search Time = %x\n", scan->ls_scan_search_time);
+        printf("    Unknown                      = %x\n", scan->unknown);
+    }
+    for(i = 0; i < (unsigned int)arg; i++)
+    {
+        scan_members = (motorola_scan_list_members*)tmp_ptr;
+        tmp_ptr+=sizeof(motorola_scan_list_members);
+        printf("Scan List %d Members\n", i);
+        printbuffer(scan_members->unknown, sizeof(scan_members->unknown));
+        printf("    Member Entry Count %d\n", scan_members->entry_count);
+        for(j = 0; j < scan_members->entry_count; j++)
+        {
+            printf("    Member Personality %d Type = %x\n", j, scan_members->entires[j].personality_type);
+            printf("    Member Personality %d ID   = %x\n", j, scan_members->entires[j].personality_id);
+        }
+        tmp_ptr+=sizeof(motorola_scan_list_member_entry)*(j-1);
+    }
+    offset = 0xA7 - (0x07*arg);
+    printbuffer(tmp_ptr, offset);
+    tmp_ptr += offset;
+    arg = *tmp_ptr;
+    tmp_ptr++;
+    for(i = 0; i < (unsigned int)arg; i++)
+    {
+        freq = (motorola_frequency*)tmp_ptr;
+        printf("Frequency %d\n", i);
+        printbuffer(freq->unknown, sizeof(freq->unknown));
+        printf("    Unknown %x\n", freq->unknown2);
+        printf("    Bandwidth = ");
+        switch(freq->bandwidth)
+        {
+            case 0x5:
+                printf("12.5 MHz\n");
+                break;
+            case 0xA:
+                printf("20 MHz\n");
+                break;
+            case 0xF:
+                printf("25 MHz\n");
+                break;
+            default:
+                printf("Unknown %x\n", freq->bandwidth);
+                break;
+        }
+        printf("    Tx Squlech Type = ");
+        switch(freq->tx_squelch_type)
+        {
+            case 0x00:
+                printf("CSQ\n");
+                break;
+            case 0x02:
+                printf("TPL\n");
+                break;
+            case 0x08:
+                printf("DPL\n");
+                break;
+            default:
+                printf("Unknown %x\n", (*tmp_ptr));
+                break;
+        }
+        printf("    Tx Squelch Code = %03o\n", freq->tx_squelch_code);
+        printf("    Rx Squlech Type = ");
+        switch(freq->rx_squelch_type)
+        {
+            case 0x00:
+                printf("CSQ\n");
+                break;
+            case 0x02:
+                printf("TPL\n");
+                break;
+            case 0x08:
+                printf("DPL\n");
+                break;
+            default:
+                printf("Unknown %x\n", (*tmp_ptr));
+                break;
+        }
+        printf("    Rx Squelch Code = %03o\n", freq->rx_squelch_code);
+        printf("    Additional Squelch Settings = %x\n", freq->additional_squelch.dword);
+        printf("        Busy Channel Lockout       = %x\n", freq->additional_squelch.bitfield.busy_channel_lockout);
+        printf("        Rx DPL Invert              = %x\n", freq->additional_squelch.bitfield.rx_dpl_invert);
+        printf("        Tx DPL Invert              = %x\n", freq->additional_squelch.bitfield.tx_dpl_invert);
+        printf("        Unknown4                   = %x\n", freq->additional_squelch.bitfield.unknown3);
+        printf("        Unknown5                   = %x\n", freq->additional_squelch.bitfield.unknown4);
+        printf("        Unknown6                   = %x\n", freq->additional_squelch.bitfield.unknown5);
+        printf("        Unknown7                   = %x\n", freq->additional_squelch.bitfield.unknown6);
+        printf("        Mute/Unmute Rule           = %x\n", freq->additional_squelch.bitfield.unmute_mute_rule);
+        printf("        Squelch Setting            = %x\n", freq->additional_squelch.bitfield.squelch_setting);
+        printf("        Tx DPL Turn-Off            = %x\n", freq->additional_squelch.bitfield.tx_turn_off_code);
+        printf("        Rx Only                    = %x\n", freq->additional_squelch.bitfield.rx_only);
+        printf("        Talkaround                 = %x\n", freq->additional_squelch.bitfield.talkaround);
+        printf("        Auto Scan                  = %x\n", freq->additional_squelch.bitfield.auto_scan);
+        printf("        Unknown15                  = %x\n", freq->additional_squelch.bitfield.unknown11);
+        printf("        Timeout                    = %x\n", freq->additional_squelch.bitfield.timeout);
+        printf("        Unknown19                  = %x\n", freq->additional_squelch.bitfield.unknown15);
+        printf("        Unknown20                  = %x\n", freq->additional_squelch.bitfield.unknown16);
+        printf("        Unknown21                  = %x\n", freq->additional_squelch.bitfield.unknown17);
+        printf("        Tx Voice Op                = %x\n", freq->additional_squelch.bitfield.tx_voice_operated);
+        printf("        Non-Standard Reverse Burst = %x\n", freq->additional_squelch.bitfield.non_standard_reverse_burst); 
+        printf("        Tx High Power              = %x\n", freq->additional_squelch.bitfield.tx_high_power);
+        printf("        Tx Auto Power              = %x\n", freq->additional_squelch.bitfield.tx_auto_power);
+        printf("        Unknown26                  = %x\n", freq->additional_squelch.bitfield.unknown21);
+        printf("        Unknown27                  = %x\n", freq->additional_squelch.bitfield.unknown22);
+        printf("        Unknown28                  = %x\n", freq->additional_squelch.bitfield.unknown23);
+        printf("        Unknown29                  = %x\n", freq->additional_squelch.bitfield.unknown24);
+        printf("        Compression Type           = %x\n", freq->additional_squelch.bitfield.compression_type);
+        printbuffer(freq->unknown3, sizeof(freq->unknown3));
+        printf("\n");
+        tmp_ptr+=sizeof(motorola_frequency);
+    }
+    printbuffer(tmp_ptr, sizeof(buff.unknown4)-(tmp_ptr - buff.unknown4));
+
+    for(i = 0; i < portcount; i++)
+    {
+        free(portnames[i]);
+    }
+    free(portnames);
 
     return 0;
 }
