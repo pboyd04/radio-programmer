@@ -147,7 +147,7 @@ ssize_t motorola_send_cmd(void* com_port, unsigned char* cmd, size_t cmdlen, /*@
         full_res_len += ret;
         front_strip += 3;
     }
-    if(valid_checksum(full_res, full_res_len) != 0)
+    if(valid_checksum(full_res, full_res_len) == 0)
     {
         printf("%s: Invalid Checksum\n", __FUNCTION__);
         printbuffer(full_res, full_res_len);
