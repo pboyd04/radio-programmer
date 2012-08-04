@@ -6,231 +6,178 @@
 #include "bytes.h"
 #include "debug.h"
 #include "motorola.h"
+#include "motorola_serial.h"
 
 #ifdef _MSC_VER
-#include <BaseTsd.h>
 #define strdup _strdup
-
-typedef SSIZE_T ssize_t;
 
 #pragma comment(lib, "getopt.lib")
 #endif
 
 int verbose_flag = 1;
 
-unsigned char first_response[3] = {0x8B, 0x05, 0x00};
-unsigned char second_response[17] = {0x0F, 0xE5, 0x8E, 0xC1, 0x54, 0x19, 0x9D, 0x11, 
-                                     0xD1, 0x80, 0x18, 0x00, 0x60, 0xB0, 0x3C, 0x8A, 
-                                     0xFF};
-
-unsigned char big_buff[8192];
-
-motorola_ht1250 buff;
-
-void motorola_calculate_checksum(unsigned char* cmd, size_t len)
+typedef struct
 {
-    unsigned char byte = 0;
-    size_t        i;
-
-    for(i = 0; i < len; i++)
+    char*               fw_ver;
+    unsigned int        min_freq;
+    unsigned int        max_freq;
+    union
     {
-        byte += cmd[i];
-    }
-    cmd[len] = (unsigned char)((unsigned char)0xFF - (unsigned char)byte);
-}
+        motorola_ht1250 ht1250;
+        unsigned char   raw[8192];
+    }                   buff;
+} my_radio_struct;
 
-unsigned int valid_checksum(unsigned char* res, size_t len)
+int motorola_get_data(void* comm, void** radio_data_handle)
 {
-    unsigned char byte = 0;
-    size_t        i;
+    ssize_t          ret;
+    unsigned char    data[256];
+    unsigned char    output[256];
+    size_t           offset = 0;
+    size_t           first_offset;
+    size_t           next_offset;
+    my_radio_struct* radio_data;
 
-    for(i = 0; i < len; i++)
+    if(motorola_compatible_check(comm) != 0)
     {
-        byte += res[i];
+        fprintf(stderr, "Error compatibility check failed!\n");
+        return -1;
+    } 
+    radio_data = calloc(sizeof(my_radio_struct), 1);
+    if(!radio_data)
+    {
+        return -1;
     }
-    if(byte == 0xFF)
+    if(motorola_get_frequency_range(comm, &(radio_data->min_freq), &(radio_data->max_freq)) != 0)
     {
-        return 1;
+        fprintf(stderr, "Error Unable to get frequqncy range!\n");
+        return -1;
+    }
+    ret = motorola_read_data(comm, 0x02000000, output, sizeof(output)); 
+    if(ret == -1)
+    {
+        return -1;
+    }
+    first_offset = (size_t)be16toh_array(output);
+    ret = motorola_read_data(comm, 0x02000000+first_offset, output, sizeof(output)); 
+    if(ret == -1)
+    { 
+        return -1;
+    }
+    next_offset = (size_t)be16toh_array(output)+first_offset;
+    ret = motorola_read_data(comm, 0x02000000+next_offset, output, sizeof(output)); 
+    if(ret == -1)
+    {
+        return -1;
     }
     else
     {
-        printf("byte = %x\n", byte);
-        return 0;
+        memcpy(radio_data->buff.raw+offset, output, (size_t)ret);
+        offset+=ret;
     }
-}
-
-ssize_t motorola_send_cmd(void* com_port, unsigned char* cmd, size_t cmdlen, /*@out@*/ unsigned char* res, size_t reslen)
-{
-    unsigned char full_cmd[256];
-    unsigned char full_res[256];
-    size_t        full_res_len = 0;
-    unsigned int  front_strip  = 1;
-    size_t        ret;
-    unsigned char status[1];
-    size_t        expected;
-
-    if(!cmd || cmdlen == 0 || cmdlen > 255 || !res || reslen == 0)
-    {
-        if(res)
-        {
-            res[0] = 0;
-        }
+    ret = motorola_read_data(comm, 0x02000000+next_offset+2, output, sizeof(output)); 
+    if(ret == -1)
+    { 
         return -1;
-    }
-    memset(res, 0, reslen);
-
-    memcpy(full_cmd, cmd, cmdlen);
-    motorola_calculate_checksum(full_cmd, cmdlen);
-    ret = write_verify_read(com_port, full_cmd, cmdlen+1, status, 1);
-    if(ret != 1 || status[0] != 0x50) /*0x50 seems to be ok... 0x60 seems to be not ok*/
-    {
-        /*Read any data left on the serial port and start over...*/
-        (void)read_serial(com_port, full_res, sizeof(full_res));
-        ret = write_verify_read(com_port, full_cmd, cmdlen+1, status, 1);
-        if(ret != 1 || status[0] != 0x50) /*0x50 seems to be ok... 0x60 seems to be not ok*/
-        {
-            printf("%s: Command failed (ret = %x, status[0] = %x)\n", __FUNCTION__, (unsigned int)ret, status[0]);
-            printf("Command was: \n");
-            printbuffer(full_cmd, cmdlen+1);
-            return -1;
-        }
-    }
-    /*The next bit seems to indicate how many bytes are returned...*/
-    ret = read_serial(com_port, full_res, 1);
-    if(ret != 1)
-    {
-        printf("%s: Failed to get response length (ret = %x)\n", __FUNCTION__, (unsigned int)ret);
-        return -1;
-    }
-    full_res_len = 1;
-    if(full_res[0] == 0xFF)
-    {
-        /*Special case, return more data in a second command*/
-        expected = 3;
     }
     else
     {
-        expected = (size_t)((0xF & full_res[0])+1);
+        memcpy(radio_data->buff.raw+offset, output, (size_t)ret);
+        offset+=ret;
     }
-    if(reslen < expected)
-    {
-        return -1;
-    }
-    if(expected >= (sizeof(full_res)-full_res_len))
-    {
-        return -1;
-    }
-    ret = read_serial(com_port, full_res+full_res_len, expected);
-    if(ret != expected)
-    {
-        printf("%s: Failed to get expected length (ret = %x)\n", __FUNCTION__, (unsigned int)ret);
-        return -1;
-    }
-    full_res_len += ret;
-    if(full_res[0] == 0xFF)
-    {
-        /* This reponse looks something like 0x8X00NN
-         * I don't know what X means
-           NN is the bytes in this response */
-        expected = (size_t)(full_res[2+(full_res_len-ret)]);
-        if(reslen < expected)
-        {
-            return -1;
-        }
-        ret = read_serial(com_port, full_res+full_res_len, expected);
-        if(ret != expected)
-        {
-            printf("%s: Failed to get second length (ret = %x, expected = %x)\n", __FUNCTION__, (unsigned int)ret, (unsigned int)expected);
-            printbuffer(full_res+full_res_len, expected);
-            return -1;
-        }
-        full_res_len += ret;
-        front_strip += 3;
-    }
-    if(valid_checksum(full_res, full_res_len) == 0)
-    {
-        printf("%s: Invalid Checksum\n", __FUNCTION__);
-        printbuffer(full_res, full_res_len);
-        return -1;
-    }
-    memcpy(res, full_res+front_strip, expected-1);
-    return (ssize_t)(expected-1);
-}
-
-ssize_t motorola_read_data(void* com_port, size_t offset, unsigned char* res, size_t reslen)
-{
-    unsigned char cmd[6];
-    ssize_t       ret;
-    unsigned char bigres[256];
-
-    cmd[0] = 0xF5;
-    cmd[1] = 0x11;
-    cmd[2] = (unsigned char)(offset >> 24);
-    cmd[3] = (unsigned char)(offset >> 16);
-    cmd[4] = (unsigned char)(offset >> 8);
-    cmd[5] = (unsigned char)offset;
-    ret = motorola_send_cmd(com_port, cmd, sizeof(cmd), bigres, sizeof(bigres));
+    ret = motorola_read_data2(comm, 0x20000280, 0x20, 0x1760, radio_data->buff.raw, sizeof(radio_data->buff.raw));
     if(ret == -1)
     {
-        return ret;
-    }
-    if((size_t)(ret-3) > reslen)
-    {
         return -1;
     }
-    memcpy(res, bigres+3, (size_t)(ret-3));
-    return ret-3;
+    else
+    {
+        offset+=(size_t)ret;
+    }
+    data[0] = 0xF2;
+    data[1] = 0x23;
+    data[2] = 0x0E;
+    ret = motorola_send_cmd(comm, data, 3, output, sizeof(output));
+    printf("%s(%d): Read %x bytes\n", __FUNCTION__, __LINE__, (unsigned int)ret);
+    if(ret != -1)
+    {
+        printbuffer(output, (size_t)ret);
+    }
+    (void)motorola_read_fw_ver(comm, &(radio_data->fw_ver));
+    *radio_data_handle = radio_data;
+    return 0;
 }
 
-ssize_t motorola_read_data2(void* com_port, size_t start_offset, unsigned int step, size_t length, unsigned char* res, size_t reslen)
+int motorola_get_fw_ver(void* radio_data_handle, char** fw_ver)
 {
-    size_t  offset;
-    size_t  my_offset = 0;
-    ssize_t ret;
+    my_radio_struct* radio_data;
 
-    for(offset = start_offset; offset < start_offset+length; offset+=step)
+    if(!radio_data_handle || !fw_ver)
     {
-        ret = motorola_read_data(com_port, offset, res+my_offset, reslen-my_offset);
-        if(ret == -1)
-        {
-            return ret;
-        }
-        my_offset+=ret;
+        return -1;
     }
-    return (ssize_t)my_offset;
+    radio_data = (my_radio_struct*)radio_data_handle;
+    *fw_ver = strdup(radio_data->fw_ver);
+    return 0;
 }
 
-int motorola_read_fw_ver(void* com_port, /*@out@*/ char** fw_ver)
+int motorola_get_model_num(void* radio_data_handle, char** model_num)
 {
-    unsigned char cmd[3];
-    ssize_t       ret;
-    unsigned char data[12];
+    my_radio_struct* radio_data;
 
-    if(!fw_ver)
-    {
-        /*@-mustdefine@*/
-        return -1;
-        /*@+mustdefine@*/
-    }
-    *fw_ver = NULL;
-    if(!com_port)
+    if(!radio_data_handle || !model_num)
     {
         return -1;
     }
+    radio_data = (my_radio_struct*)radio_data_handle;
+    *model_num = strdup(radio_data->buff.ht1250.model_num);
+    return 0;
+}
 
-    cmd[0] = 0xF2;
-    cmd[1] = 0x23;
-    cmd[2] = 0x03;
-    ret = motorola_send_cmd(com_port, cmd, sizeof(cmd), data, sizeof(data));
-    if(ret == -1)
+int motorola_get_serial_num(void* radio_data_handle, char** serial_num)
+{
+    my_radio_struct* radio_data;
+
+    if(!radio_data_handle || !serial_num)
     {
-        return -1; 
+        return -1;
     }
-    data[11] = 0;
-    /* Data[0] == 0x8B
-     * Data[1] == 0x03 
-     * I don't know what these mean */
-    *fw_ver = strdup((const char*)data+2);
+    radio_data = (my_radio_struct*)radio_data_handle;
+    *serial_num = strdup(radio_data->buff.ht1250.serial_num);
+    return 0;
+}
+
+int motorola_get_cp_info(void* radio_data_handle, int index, motorola_program_info* info)
+{
+    my_radio_struct* radio_data;
+
+    if(!radio_data_handle || !info)
+    {
+        return -1;
+    }
+    radio_data = (my_radio_struct*)radio_data_handle;
+    if(index == 0)
+    {
+        memcpy(info, &(radio_data->buff.ht1250.original), sizeof(motorola_program_info));
+    }
+    else
+    {
+        memcpy(info, &(radio_data->buff.ht1250.last), sizeof(motorola_program_info));
+    }
+    return 0;
+}
+
+int motorola_get_freq_range(void* radio_data_handle, unsigned int* min, unsigned int* max)
+{
+    my_radio_struct* radio_data;
+
+    if(!radio_data_handle || !min || !max)
+    {
+        return -1;
+    }
+    radio_data = (my_radio_struct*)radio_data_handle;
+    *min = radio_data->min_freq;
+    *max = radio_data->max_freq;
     return 0;
 }
 
@@ -278,27 +225,20 @@ int main(int argc, char** argv)
 {
     char**        portnames = NULL;
     unsigned int  portcount = 0;
-    ssize_t       ret;
     unsigned int  i, j;
     char*         selected_port = NULL;
     void*         comm;
-    unsigned char data[256];
-    unsigned char output[256];
-    size_t        offset = 0;
-    size_t        first_offset;
-    size_t        next_offset;
-    char*          fw_ver;
     int            arg;
     int            opt_index = 0;
+    size_t         offset;
     unsigned char* tmp_ptr;
     motorola_string_struct* string_struct;
     char*          string_ptr;
     char*          string_storage;
+    my_radio_struct*    data;
     motorola_frequency* freq;
     motorola_scan_list* scan;
     motorola_scan_list_members* scan_members;
-
-    memset(big_buff, 0, sizeof(big_buff));
 
     if(argc < 2)
     {
@@ -369,117 +309,166 @@ int main(int argc, char** argv)
         fprintf(stderr, "Error opening serial port %s!\n", selected_port);
         return -1;
     }
-    data[0] = 0xF2;
-    data[1] = 0x23;
-    data[2] = 0x05;
-    ret = motorola_send_cmd(comm, data, 3, output, sizeof(output));
-    /*This is some sort capabilities command... I will need to get other responses than
-     *0x8B05007C to figure out what this really is...*/
-    if((size_t)ret != sizeof(first_response) || (memcmp(first_response, output, (size_t)ret) != 0))
+    if(motorola_get_data(comm, &data) != 0)
     {
-        printf("%s(%d): Read %x bytes\n", __FUNCTION__, __LINE__, (unsigned int)ret);
-        if(ret != -1)
-        {
-            printbuffer(output, (size_t)ret);
-        } 
+        fprintf(stderr, "Error obtaining data from serial port %s!\n", selected_port);
+        closeport(comm);
         return -1;
     }
-    data[0] = 0xF2;
-    data[1] = 0x23;
-    data[2] = 0x0F;
-    ret = motorola_send_cmd(comm, data, 3, output, sizeof(output));
-    if((size_t)ret != sizeof(second_response) || (memcmp(second_response, output, (size_t)ret) != 0))
-    {
-        printf("%s(%d): Read %x bytes\n", __FUNCTION__, __LINE__, (unsigned int)ret);
-        if(ret != -1)
-        {
-            printbuffer(output, (size_t)ret);
-        }
-        return -1; 
-    }
-    ret = motorola_read_data(comm, 0x02000000, output, sizeof(output)); 
-    if(ret == -1)
-    {
-        return -1;
-    }
-    first_offset = (size_t)be16toh_array(output);
-    ret = motorola_read_data(comm, 0x02000000+first_offset, output, sizeof(output)); 
-    if(ret == -1)
-    { 
-        return -1;
-    }
-    next_offset = (size_t)be16toh_array(output)+first_offset;
-    ret = motorola_read_data(comm, 0x02000000+next_offset, output, sizeof(output)); 
-    if(ret == -1)
-    {
-        return -1;
-    }
-    else
-    {
-        memcpy(big_buff+offset, output, (size_t)ret);
-        offset+=ret;
-    }
-    ret = motorola_read_data(comm, 0x02000000+next_offset+2, output, sizeof(output)); 
-    if(ret == -1)
-    { 
-        return -1;
-    }
-    else
-    {
-        memcpy(big_buff+offset, output, (size_t)ret);
-        offset+=ret;
-    }
-    ret = motorola_read_data2(comm, 0x20000280, 0x20, 0x1760, big_buff, sizeof(big_buff));
-    if(ret == -1)
-    {
-        return -1;
-    }
-    else
-    {
-        offset+=(size_t)ret;
-    }
-    data[0] = 0xF2;
-    data[1] = 0x23;
-    data[2] = 0x0E;
-    ret = motorola_send_cmd(comm, data, 3, output, sizeof(output));
-    printf("%s(%d): Read %x bytes\n", __FUNCTION__, __LINE__, (unsigned int)ret);
-    if(ret != -1)
-    {
-        printbuffer(output, (size_t)ret);
-    }
-    (void)motorola_read_fw_ver(comm, &fw_ver);
-    printf("fw_ver = %s\n", fw_ver);
-    memcpy(&buff, big_buff, sizeof(buff));
-    printbuffer(buff.unknown, sizeof(buff.unknown));
-    printf("Serial Number = %s\n", buff.serial_num);
-    printf("Model Number = %s\n", buff.model_num);
+
+    motorola_get_freq_range((void*)data, &i, &j);
+    
+    printf("Maximum Frequency = %u\n", i);
+    printf("Minimum Frequency = %u\n", j);
+    printf("fw_ver = %s\n", data->fw_ver);
+    printf("Serial Number = %s\n", data->buff.ht1250.serial_num);
+    printf("Model Number = %s\n", data->buff.ht1250.model_num);
     printf("Original Programing\n");
-    printf("    Code Plug Major Version = %x\n", buff.original.code_plug_major);
-    printf("    Code Plug Minor Version = %x\n", buff.original.code_plug_minor);
-    printf("    Code Plug Source = %x\n", buff.original.source);
-    printf("    Date/Time = %x/%x/%02x%02x %02x:%02x\n", buff.original.date_time.month, buff.original.date_time.day,
-                                                     buff.original.date_time.year[0], buff.original.date_time.year[1],
-                                                     buff.original.date_time.hour, buff.original.date_time.min);
-    printbuffer(buff.unknown2, sizeof(buff.unknown2));
+    printf("    Code Plug Major Version = %x\n", data->buff.ht1250.original.code_plug_major);
+    printf("    Code Plug Minor Version = %x\n", data->buff.ht1250.original.code_plug_minor);
+    printf("    Code Plug Source = %x\n", data->buff.ht1250.original.source);
+    printf("    Date/Time = %x/%x/%02x%02x %02x:%02x\n", data->buff.ht1250.original.date_time.month, data->buff.ht1250.original.date_time.day,
+                                                     data->buff.ht1250.original.date_time.year[0], data->buff.ht1250.original.date_time.year[1],
+                                                     data->buff.ht1250.original.date_time.hour, data->buff.ht1250.original.date_time.min);
+    printbuffer(data->buff.ht1250.unknown2, sizeof(data->buff.ht1250.unknown2));
     printf("Latest Programing\n");
-    printf("    Code Plug Major Version = %x\n", buff.last.code_plug_major);
-    printf("    Code Plug Minor Version = %x\n", buff.last.code_plug_minor);
-    printf("    Code Plug Source = %x\n", buff.last.source);
-    printf("    Date/Time = %x/%x/%02x%02x %02x:%02x\n", buff.last.date_time.month, buff.last.date_time.day,
-                                                     buff.last.date_time.year[0], buff.last.date_time.year[1],
-                                                     buff.last.date_time.hour, buff.last.date_time.min);
-    printbuffer(buff.unknown3, sizeof(buff.unknown3));
+    printf("    Code Plug Major Version = %x\n", data->buff.ht1250.last.code_plug_major);
+    printf("    Code Plug Minor Version = %x\n", data->buff.ht1250.last.code_plug_minor);
+    printf("    Code Plug Source = %x\n", data->buff.ht1250.last.source);
+    printf("    Date/Time = %x/%x/%02x%02x %02x:%02x\n", data->buff.ht1250.last.date_time.month, data->buff.ht1250.last.date_time.day,
+                                                     data->buff.ht1250.last.date_time.year[0], data->buff.ht1250.last.date_time.year[1],
+                                                     data->buff.ht1250.last.date_time.hour, data->buff.ht1250.last.date_time.min);
+    printbuffer(data->buff.ht1250.unknown3, sizeof(data->buff.ht1250.unknown3));
+    printf("Radio Configuration\n");
+    printf("    Unknown0             = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown0); 
+    printf("    Unknown1             = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown1); 
+    printf("    Unknown2             = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown2); 
+    printf("    RF Test              = %x\n", data->buff.ht1250.radio_configuration.bitfield.rf_test); 
+    printf("    FPA Test             = %x\n", data->buff.ht1250.radio_configuration.bitfield.fpa_test); 
+    printf("    Unknown5             = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown5); 
+    printf("    Unknown6             = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown6); 
+    printf("    TX Inhibit           = %x\n", data->buff.ht1250.radio_configuration.bitfield.tx_override); 
+    printf("    Unknown8             = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown8); 
+    printf("    Unknown9             = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown9); 
+    printf("    Unknown10            = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown10); 
+    printf("    Unknown11            = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown11); 
+    printf("    Sticky Monitor Alert = %x\n", data->buff.ht1250.radio_configuration.bitfield.sticky_permanent_monitor_alert); 
+    printf("    Unknown13         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown13); 
+    printf("    Unknown14         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown14); 
+    printf("    Unknown15         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown15); 
+    printf("    Unknown16         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown16); 
+    printf("    VOX Headset       = %x\n", data->buff.ht1250.radio_configuration.bitfield.vox_headset); 
+    printf("    Cloning           = %x\n", data->buff.ht1250.radio_configuration.bitfield.cloning); 
+    printf("    Ht Keypad         = %x\n", data->buff.ht1250.radio_configuration.bitfield.hot_keypad); 
+    printf("    Unknown20         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown20);
+    printf("    Unknown21         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown21);
+    printf("    Power Up Tone     = %x\n", data->buff.ht1250.radio_configuration.bitfield.power_up_tone_type);
+    printf("    Unknown24         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown24);
+    printf("    Auto Power Mode   = %x\n", data->buff.ht1250.radio_configuration.bitfield.auto_power_mode);
+    printf("    Tx Low Batt       = %x\n", data->buff.ht1250.radio_configuration.bitfield.tx_low_batt);
+    printf("    Recall Last Menu  = %x\n", data->buff.ht1250.radio_configuration.bitfield.recall_last_menu);
+    printf("    Auto Backlight    = %x\n", data->buff.ht1250.radio_configuration.bitfield.auto_backlight);
+    printf("    Power Up LED      = %x\n", data->buff.ht1250.radio_configuration.bitfield.power_up_led);
+    printf("    Low Batt LED      = %x\n", data->buff.ht1250.radio_configuration.bitfield.low_batt_led);
+    printf("    Busy LED          = %x\n", data->buff.ht1250.radio_configuration.bitfield.busy_led);
+    printf("    Low Batt Interval = %x\n", data->buff.ht1250.radio_configuration.bitfield.rx_low_batt_interval);
+    printf("    Unknown39         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown39);
+    printf("    Unknown40         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown40);
+    printf("    Unknown41         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown41);
+    printf("    Unknown42         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown42);
+    printf("    Unknown43         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown43);
+    printf("    Unknown44         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown44);
+    printf("    Unknown45         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown45);
+    printf("    Unknown46         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown46);
+    printf("    Unknown47         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown47);
+    printf("    Unknown48         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown48);
+    printf("    Unknown49         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown49);
+    printf("    Unknown50         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown50);
+    printf("    Unknown51         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown51);
+    printf("    Unknown52         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown52);
+    printf("    Unknown53         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown53);
+    printf("    Unknown54         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown54);
+    printf("    Long Press Time   = %x\n", data->buff.ht1250.radio_configuration.bitfield.long_press_time);
+    printf("    Unknown63         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown63);
+    printf("    Unknown64         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown64);
+    printf("    Unknown65         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown65);
+    printf("    Unknown66         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown66);
+    printf("    Unknown67         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown67);
+    printf("    Unknown68         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown68);
+    printf("    Unknown69         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown69);
+    printf("    Unknown70         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown70);
+    printf("    Unknown71         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown71);
+    printf("    Unknown72         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown72);
+    printf("    Unknown73         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown73);
+    printf("    Unknown74         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown74);
+    printf("    Unknown75         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown75);
+    printf("    Unknown76         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown76);
+    printf("    Unknown77         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown77);
+    printf("    Unknown78         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown78);
+    printf("    Unknown79         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown79);
+    printf("    Option Board Type = %x\n", data->buff.ht1250.radio_configuration.bitfield.option_board_type);
+    printf("    Unknown83         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown83);
+    printf("    Unknown84         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown84);
+    printf("    Unknown85         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown85);
+    printf("    Unknown86         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown86);
+    printf("    Unknown87         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown87);
+    printf("    Unknown88         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown88);
+    printf("    Unknown89         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown89);
+    printf("    Unknown90         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown90);
+    printf("    Unknown91         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown91);
+    printf("    Unknown92         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown92);
+    printf("    APF               = %x\n", data->buff.ht1250.radio_configuration.bitfield.audio_processing_filter);
+    printf("    Alert Tone Constant Boost = %x\n", data->buff.ht1250.radio_configuration.bitfield.alert_tone_constant_boost);
+    printf("    Wrap Around Alert = %x\n", data->buff.ht1250.radio_configuration.bitfield.wrap_around_alert);
+    printf("    Unknown96         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown96);
+    printf("    Priority Scan     = %x\n", data->buff.ht1250.radio_configuration.bitfield.priority_scan);
+    printf("    Unknown98         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown98);
+    printf("    Unknown99         = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown99);
+    printf("    Unknown100        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown100);
+    printf("    Unknown101        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown101);
+    printf("    Unknown102        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown102);
+    printf("    Unknown103        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown103);
+    printf("    Unknown104        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown104);
+    printf("    Unknown105        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown105);
+    printf("    Unknown106        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown106);
+    printf("    Unknown107        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown107);
+    printf("    Unknown108        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown108);
+    printf("    Unknown109        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown109);
+    printf("    Unknown110        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown110);
+    printf("    Unknown111        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown111);
+    printf("    Unknown112        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown112);
+    printf("    Unknown113        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown113);
+    printf("    Unknown114        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown114);
+    printf("    Unknown115        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown115);
+    printf("    Unknown116        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown116);
+    printf("    Unknown117        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown117);
+    printf("    Unknown118        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown118);
+    printf("    Unknown119        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown119);
+    printf("    Unknown120        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown120);
+    printf("    Unknown121        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown121);
+    printf("    Unknown122        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown122);
+    printf("    Unknown123        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown123);
+    printf("    Unknown124        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown124);
+    printf("    Unknown125        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown125);
+    printf("    Unknown126        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown126);
+    printf("    Unknown127        = %x\n", data->buff.ht1250.radio_configuration.bitfield.unknown127);
+    printbuffer(data->buff.ht1250.unknown4, sizeof(data->buff.ht1250.unknown4));
+    printf("    Radio Time Out    = %x\n", data->buff.ht1250.radio_time_out);
+    printbuffer(data->buff.ht1250.unknown5, sizeof(data->buff.ht1250.unknown5));
+    printf("    Mic Gain          = %x\n", data->buff.ht1250.mic_gain);
+    printf("    Acc Mic Gain      = %x\n", data->buff.ht1250.accessory_mic_gain);
+    printbuffer(data->buff.ht1250.unknown6, sizeof(data->buff.ht1250.unknown6));
     printf("Personality Assignments\n");
-    printf("    Number of Personality Assignments %d\n", buff.personality_assignments.assignment_count);
-    printf("    Unknown %02x %02x\n", buff.personality_assignments.unknown[0], 
-                                      buff.personality_assignments.unknown[1]); 
-    for(i = 0; i < buff.personality_assignments.assignment_count; i++)
+    printf("    Number of Personality Assignments %d\n", data->buff.ht1250.personality_assignments.assignment_count);
+    printf("    Unknown %02x %02x\n", data->buff.ht1250.personality_assignments.unknown[0], 
+                                      data->buff.ht1250.personality_assignments.unknown[1]); 
+    for(i = 0; i < data->buff.ht1250.personality_assignments.assignment_count; i++)
     {
-        printf("    Personality[%u] = %x\n", i, buff.personality_assignments.entries[i].personality);
-        printf("    Unknown1[%u] = %x\n", i, buff.personality_assignments.entries[i].unknown[0]);
-        printf("    Unknown2[%u] = %x\n", i, buff.personality_assignments.entries[i].unknown[1]);
+        printf("    Personality[%u] = %x\n", i, data->buff.ht1250.personality_assignments.entries[i].personality);
+        printf("    Unknown1[%u] = %x\n", i, data->buff.ht1250.personality_assignments.entries[i].unknown[0]);
+        printf("    Unknown2[%u] = %x\n", i, data->buff.ht1250.personality_assignments.entries[i].unknown[1]);
     }
-    tmp_ptr = (unsigned char*)&(buff.personality_assignments.entries[i]);
+    tmp_ptr = (unsigned char*)&(data->buff.ht1250.personality_assignments.entries[i]);
     printbuffer(tmp_ptr, 2);
     tmp_ptr += 2;
     string_struct = (motorola_string_struct*)tmp_ptr;
@@ -637,7 +626,7 @@ int main(int argc, char** argv)
         printf("\n");
         tmp_ptr+=sizeof(motorola_frequency);
     }
-    printbuffer(tmp_ptr, sizeof(buff.unknown4)-(tmp_ptr - buff.unknown4));
+    printbuffer(tmp_ptr, sizeof(data->buff.ht1250.unknown8)-(tmp_ptr - data->buff.ht1250.unknown8));
 
     if(portnames)
     {

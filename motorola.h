@@ -222,11 +222,185 @@ typedef struct
     unsigned char                  unknown2[0x5F];
     motorola_program_info          last;
     unsigned char                  checksum;
-    unsigned char                  unknown3[0x38];
+    unsigned char                  unknown3[3];
+    union
+    {
+        struct
+        {
+            unsigned int           unknown0:1;
+            unsigned int           unknown1:1;
+            unsigned int           unknown2:1;
+            unsigned int           rf_test:1;
+            unsigned int           fpa_test:1;
+            unsigned int           unknown5:1;
+            unsigned int           unknown6:1;
+            unsigned int           tx_override:1;
+            unsigned int           unknown8:1;
+            unsigned int           unknown9:1;
+            unsigned int           unknown10:1;
+            unsigned int           unknown11:1;
+            unsigned int           sticky_permanent_monitor_alert:1;
+            unsigned int           unknown13:1;
+            /*
+             * Monitor Type
+             * 1 = Silent
+             * 0 = Open Squelch
+             */
+            unsigned int           unknown14:1;
+            unsigned int           unknown15:1;
+            unsigned int           unknown16:1;
+            unsigned int           vox_headset:1;
+            unsigned int           cloning:1;
+            unsigned int           hot_keypad:1;
+            unsigned int           unknown20:1;
+            unsigned int           unknown21:1;
+            /*
+             * Power Up Tone Type
+             * 0 = Disabled
+             * 1 = Normal
+             * 2 = Musical (Sounds more like an error tone)
+             */
+            unsigned int           power_up_tone_type:2; 
+            unsigned int           unknown24:1;
+            unsigned int           auto_power_mode:1;
+            unsigned int           tx_low_batt:1;
+            unsigned int           recall_last_menu:1;
+            unsigned int           auto_backlight:1;
+            unsigned int           power_up_led:1;
+            unsigned int           low_batt_led:1;
+            unsigned int           busy_led:1;
+            /*
+             * Rx Low Battery Alert Interval
+             * 0 == Disabled
+             * Value * 5
+             */
+            unsigned int           rx_low_batt_interval:7;
+            unsigned int           unknown39:1;
+            unsigned int           unknown40:1;
+            unsigned int           unknown41:1;
+            unsigned int           unknown42:1;
+            unsigned int           unknown43:1;
+            unsigned int           unknown44:1;
+            unsigned int           unknown45:1;
+            unsigned int           unknown46:1;
+            unsigned int           unknown47:1;
+            unsigned int           unknown48:1;
+            unsigned int           unknown49:1;
+            unsigned int           unknown50:1;
+            unsigned int           unknown51:1;
+            unsigned int           unknown52:1;
+            unsigned int           unknown53:1;
+            unsigned int           unknown54:1;
+            unsigned int           unknown55:1;
+            /*
+             * Long Press Time (ms)
+             * Value * 500
+             */
+            unsigned int           long_press_time:6;
+            unsigned int           unknown62:1;
+            unsigned int           unknown63:1;
+            unsigned int           unknown64:1;
+            unsigned int           unknown65:1;
+            unsigned int           unknown66:1;
+            unsigned int           unknown67:1;
+            unsigned int           unknown68:1;
+            unsigned int           unknown69:1;
+            unsigned int           unknown70:1;
+            unsigned int           unknown71:1;
+            unsigned int           unknown72:1;
+            unsigned int           unknown73:1;
+            unsigned int           unknown74:1;
+            unsigned int           unknown75:1;
+            unsigned int           unknown76:1;
+            unsigned int           unknown77:1;
+            unsigned int           unknown78:1;
+            unsigned int           unknown79:1;
+            /*
+             * Option Board Type
+             * 0 = None
+             * 3 = Simple Decoder
+             * 4 = Simple Option Interface
+             * 5 = Advanced Option Interface
+             * 6 = Voice Storage
+             * 7 = Advanced & Voice Storage
+             */
+            unsigned int           option_board_type:3; //Option Board Type
+            unsigned int           unknown83:1;
+            unsigned int           unknown84:1;
+            unsigned int           unknown85:1;
+            unsigned int           unknown86:1;
+            unsigned int           unknown87:1;
+            unsigned int           unknown88:1;
+            unsigned int           unknown89:1;
+            unsigned int           unknown90:1;
+            unsigned int           unknown91:1;
+            unsigned int           unknown92:1;
+            unsigned int           audio_processing_filter:1;
+            unsigned int           alert_tone_constant_boost:1;
+            unsigned int           wrap_around_alert:1;
+            unsigned int           unknown96:1;
+            unsigned int           priority_scan:1;
+            unsigned int           unknown98:1;
+            unsigned int           unknown99:1;
+            unsigned int           unknown100:1;
+            unsigned int           unknown101:1;
+            unsigned int           unknown102:1;
+            unsigned int           unknown103:1;
+            unsigned int           unknown104:1;
+            unsigned int           unknown105:1;
+            unsigned int           unknown106:1;
+            unsigned int           unknown107:1;
+            unsigned int           unknown108:1;
+            unsigned int           unknown109:1;
+            unsigned int           unknown110:1;
+            unsigned int           unknown111:1;
+            unsigned int           unknown112:1;
+            unsigned int           unknown113:1;
+            unsigned int           unknown114:1;
+            unsigned int           unknown115:1;
+            unsigned int           unknown116:1;
+            unsigned int           unknown117:1;
+            unsigned int           unknown118:1;
+            unsigned int           unknown119:1;
+            unsigned int           unknown120:1;
+            unsigned int           unknown121:1;
+            unsigned int           unknown122:1;
+            unsigned int           unknown123:1;
+            unsigned int           unknown124:1;
+            unsigned int           unknown125:1;
+            unsigned int           unknown126:1;
+            unsigned int           unknown127:1;
+        }                          bitfield;
+        unsigned long long         qword;
+        unsigned long long         qword2;
+    }                              radio_configuration;
+    unsigned char                  unknown4[3];
+    unsigned char                  radio_time_out;
+    unsigned char                  unknown5[8];
+    /*
+     * Mic Gain
+     * Value * 1.5 dB
+     */
+    unsigned char                  mic_gain;
+    /*
+     * Accessory Mic Gain
+     * Value * 1.5 dB
+     */
+    unsigned char                  accessory_mic_gain;
+    unsigned char                  unknown6[0x14];
+    unsigned char                  checksum2;
+    unsigned char                  unknown7[2];
     motorla_personality_assignment personality_assignments;
-    unsigned char                  unknown4[5769];
+    unsigned char                  unknown8[5769];
 } motorola_ht1250;
 #pragma pack()
+
+DllExport int motorola_get_data      (void* com_port, void** radio_data_handle);
+DllExport int motorola_get_fw_ver    (void* radio_data_handle, char** fw_ver);
+DllExport int motorola_get_model_num (void* radio_data_handle, char** model_num);
+DllExport int motorola_get_serial_num(void* radio_data_handle, char** serial_num);
+DllExport int motorola_get_cp_info   (void* radio_data_handle, int index, motorola_program_info* info);
+DllExport int motorola_get_freq_range(void* radio_data_handle, unsigned int* min, unsigned int* max);
 
 #endif
 /* vim: set tabstop=4 shiftwidth=4 expandtab: */

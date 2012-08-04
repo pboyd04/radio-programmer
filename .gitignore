@@ -5,3 +5,6 @@
 /win32/radio.exe
 
 /linux/radio
+/win32/radio.dll
+/win32/radio.ilk
+/win32/radio.pdb
