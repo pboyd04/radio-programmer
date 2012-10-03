@@ -459,7 +459,7 @@ int main(int argc, char** argv)
     printf("    Acc Mic Gain      = %x\n", data->buff.ht1250.accessory_mic_gain);
     printbuffer(data->buff.ht1250.unknown6, sizeof(data->buff.ht1250.unknown6));
     printf("Personality Assignments\n");
-    printf("    Number of Personality Assignments %d\n", data->buff.ht1250.personality_assignments.assignment_count);
+    printf("    Number of Personality Assignments %u\n", data->buff.ht1250.personality_assignments.assignment_count);
     printf("    Unknown %02x %02x\n", data->buff.ht1250.personality_assignments.unknown[0], 
                                       data->buff.ht1250.personality_assignments.unknown[1]); 
     for(i = 0; i < data->buff.ht1250.personality_assignments.assignment_count; i++)
@@ -473,8 +473,8 @@ int main(int argc, char** argv)
     tmp_ptr += 2;
     string_struct = (motorola_string_struct*)tmp_ptr;
     printf("Personality Assignment Strings\n");
-    printf("    Size of Personality Assignment Strings %d\n", string_struct->string_size);
-    printf("    Number of Personality Assignment Strings %d\n", string_struct->string_count);
+    printf("    Size of Personality Assignment Strings %u\n", string_struct->string_size);
+    printf("    Number of Personality Assignment Strings %u\n", string_struct->string_count);
     printf("    Unknown %02x %02x %02x\n", string_struct->unknown[0], string_struct->unknown[1], string_struct->unknown[2]);
     string_storage = calloc((size_t)(string_struct->string_size+1), sizeof(char));
     if(!string_storage)
@@ -493,7 +493,7 @@ int main(int argc, char** argv)
     printbuffer(tmp_ptr, 0x27B);
     tmp_ptr += 0x27B;
     arg = *tmp_ptr;
-    printf("Scan List Count = %d\n", *tmp_ptr);
+    printf("Scan List Count = %u\n", *tmp_ptr);
     tmp_ptr++;
     for(i = 0; i < (unsigned int)arg; i++)
     {

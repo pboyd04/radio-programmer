@@ -156,7 +156,7 @@ size_t write_verify_read(void* com_port, unsigned char* in, size_t inlen, unsign
     ret = read_serial(com_port, buf, inlen+outlen);
     if(ret < inlen || memcmp(in, buf, inlen))
     {
-        printf("%s: Read %x bytes\n", __FUNCTION__, ret);
+        printf("%s: Read %Ix bytes\n", __FUNCTION__, ret);
         printbuffer(buf, ret); 
         return (unsigned int)-1;
     }

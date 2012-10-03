@@ -1,6 +1,7 @@
 /win32/*.obj
 /win32/*.lib
 /win32/*.exp
+/win32/*.pdb
 /win32/getopt.dll
 /win32/radio.exe
 
@@ -8,3 +9,5 @@
 /win32/radio.dll
 /win32/radio.ilk
 /win32/radio.pdb
+
+motorola.c~
