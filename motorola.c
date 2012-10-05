@@ -239,6 +239,8 @@ int main(int argc, char** argv)
     motorola_frequency* freq;
     motorola_scan_list* scan;
     motorola_scan_list_members* scan_members;
+    motorola_string_struct* phone_list;
+    unsigned char           raw_phone[8];
 
     if(argc < 2)
     {
@@ -330,6 +332,8 @@ int main(int argc, char** argv)
     printf("    Date/Time = %x/%x/%02x%02x %02x:%02x\n", data->buff.ht1250.original.date_time.month, data->buff.ht1250.original.date_time.day,
                                                      data->buff.ht1250.original.date_time.year[0], data->buff.ht1250.original.date_time.year[1],
                                                      data->buff.ht1250.original.date_time.hour, data->buff.ht1250.original.date_time.min);
+    printbuffer(data->buff.ht1250.unknown1, sizeof(data->buff.ht1250.unknown1));
+    printf("TANAPA = %s\n", data->buff.ht1250.tanapa);
     printbuffer(data->buff.ht1250.unknown2, sizeof(data->buff.ht1250.unknown2));
     printf("Latest Programing\n");
     printf("    Code Plug Major Version = %x\n", data->buff.ht1250.last.code_plug_major);
@@ -489,9 +493,81 @@ int main(int argc, char** argv)
         string_ptr+=string_struct->string_size;
         printf("String[%u] = %s\n", i, string_storage);
     }
+    free(string_storage);
     tmp_ptr = (unsigned char*)string_ptr;
-    printbuffer(tmp_ptr, 0x27B);
-    tmp_ptr += 0x27B;
+    printbuffer(tmp_ptr, 0x14);
+    tmp_ptr += 0x14;
+    phone_list = (motorola_string_struct*)tmp_ptr;
+    printf("Phone Numbers\n");
+    printf("    Size of Phone Numbers %u\n", phone_list->string_size);
+    printf("    Number of Phone Numbers %u\n", phone_list->string_count);
+    printf("    Unknown %02x %02x %02x\n", phone_list->unknown[0], phone_list->unknown[1], phone_list->unknown[2]);
+    string_ptr = phone_list->string;
+    for(i = 0; i < phone_list->string_count; i++)
+    {
+        memcpy(raw_phone, string_ptr, (size_t)phone_list->string_size);
+        string_ptr+=phone_list->string_size;
+        if(raw_phone[0] == 0xFF && raw_phone[1] == 0xFF && raw_phone[2] == 0xFF && raw_phone[3] == 0xFF && 
+           raw_phone[4] == 0xFF && raw_phone[5] == 0xFF && raw_phone[6] == 0xFF && raw_phone[7] == 0xFF)
+        {
+            printf("Phone Number[%u] = None Set\n", i);
+        }
+        else
+        {
+            printf("Phone Number[%u] = ", i);
+            for(j = 0; j < 8; j++)
+            {
+                switch((raw_phone[j] >> 4) & 0xF)
+                {
+                    case 0xA:
+                        printf("0");
+                        break;
+                    case 0xF:
+                        break;
+                    default:
+                        printf("%X", (raw_phone[j] >> 4) & 0xF);
+                        break;
+                }
+                switch((raw_phone[j]) & 0xF)
+                {
+                    case 0xA:
+                        printf("0");
+                        break;
+                    case 0xF:
+                        break;
+                    default:
+                        printf("%X", (raw_phone[j]) & 0xF);
+                        break;
+                }
+            }
+            printf("\n");
+        }
+    }
+    tmp_ptr = (unsigned char*)string_ptr;
+    printbuffer(tmp_ptr, 30);
+    tmp_ptr += 30;
+    string_struct = (motorola_string_struct*)tmp_ptr;
+    printf("Phone Assignment Strings\n");
+    printf("    Size of Phone Assignment Strings %u\n", string_struct->string_size);
+    printf("    Number of Phone Assignment Strings %u\n", string_struct->string_count);
+    printf("    Unknown %02x %02x %02x\n", string_struct->unknown[0], string_struct->unknown[1], string_struct->unknown[2]);
+    string_storage = calloc((size_t)(string_struct->string_size+1), sizeof(char));
+    if(!string_storage)
+    {
+        fprintf(stderr, "Error allocating memory\n");
+        abort();
+    }
+    string_ptr = string_struct->string;
+    for(i = 0; i < string_struct->string_count; i++)
+    {
+        memcpy(string_storage, string_ptr, (size_t)string_struct->string_size);
+        string_ptr+=string_struct->string_size;
+        printf("String[%u] = %s\n", i, string_storage);
+    }
+    free(string_storage);
+    tmp_ptr = (unsigned char*)string_ptr;
+    printbuffer(tmp_ptr, 3);
+    tmp_ptr += 3;
     arg = *tmp_ptr;
     printf("Scan List Count = %u\n", *tmp_ptr);
     tmp_ptr++;
@@ -541,7 +617,7 @@ int main(int argc, char** argv)
     for(i = 0; i < (unsigned int)arg; i++)
     {
         freq = (motorola_frequency*)tmp_ptr;
-        printf("Frequency %u\n", i);
+        printf("Conventional Personality %u\n", i);
         printbuffer(freq->unknown, sizeof(freq->unknown));
         printf("    Unknown %x\n", freq->unknown2);
         printf("    Bandwidth = ");
@@ -626,6 +702,54 @@ int main(int argc, char** argv)
         printf("\n");
         tmp_ptr+=sizeof(motorola_frequency);
     }
+    printbuffer(tmp_ptr, 21);
+    tmp_ptr += 21;
+
+    string_struct = (motorola_string_struct*)tmp_ptr;
+    printf("Conventional Personality Strings\n");
+    printf("    Size of Conventional Personality Strings %u\n", string_struct->string_size);
+    printf("    Number of Conventional Personality Strings %u\n", string_struct->string_count);
+    printf("    Unknown %02x %02x %02x\n", string_struct->unknown[0], string_struct->unknown[1], string_struct->unknown[2]);
+    string_storage = calloc((size_t)(string_struct->string_size+1), sizeof(char));
+    if(!string_storage)
+    {
+        fprintf(stderr, "Error allocating memory\n");
+        abort();
+    }
+    string_ptr = string_struct->string;
+    for(i = 0; i < string_struct->string_count; i++)
+    {
+        memcpy(string_storage, string_ptr, (size_t)string_struct->string_size);
+        string_ptr+=string_struct->string_size;
+        printf("Conventional Personality[%u] = %s\n", i, string_storage);
+    }
+    free(string_storage);
+    tmp_ptr = (unsigned char*)string_ptr;
+
+    printbuffer(tmp_ptr, 0x43);
+    tmp_ptr += 0x43;
+
+    string_struct = (motorola_string_struct*)tmp_ptr;
+    printf("Universal ID Strings\n");
+    printf("    Size of Universal ID Strings %u\n", string_struct->string_size);
+    printf("    Number of Universal ID Strings %u\n", string_struct->string_count);
+    printf("    Unknown %02x %02x %02x\n", string_struct->unknown[0], string_struct->unknown[1], string_struct->unknown[2]);
+    string_storage = calloc((size_t)(string_struct->string_size+1), sizeof(char));
+    if(!string_storage)
+    {
+        fprintf(stderr, "Error allocating memory\n");
+        abort();
+    }
+    string_ptr = string_struct->string;
+    for(i = 0; i < string_struct->string_count; i++)
+    {
+        memcpy(string_storage, string_ptr, (size_t)string_struct->string_size);
+        string_ptr+=string_struct->string_size;
+        printf("Universal ID[%u] = %s\n", i, string_storage);
+    }
+    free(string_storage);
+    tmp_ptr = (unsigned char*)string_ptr;
+
     printbuffer(tmp_ptr, sizeof(data->buff.ht1250.unknown8)-(tmp_ptr - data->buff.ht1250.unknown8));
 
     if(portnames)

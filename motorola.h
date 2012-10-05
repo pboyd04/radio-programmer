@@ -219,7 +219,10 @@ typedef struct
     char                           model_num[16];
     char                           null_padding2[2];
     motorola_program_info          original;
-    unsigned char                  unknown2[0x5F];
+    unsigned char                  unknown1[0x19];
+    unsigned char                  tanapa[10];
+    char                           null_padding3[2];
+    unsigned char                  unknown2[0x3A];
     motorola_program_info          last;
     unsigned char                  checksum;
     unsigned char                  unknown3[3];
@@ -391,7 +394,7 @@ typedef struct
     unsigned char                  checksum2;
     unsigned char                  unknown7[2];
     motorla_personality_assignment personality_assignments;
-    unsigned char                  unknown8[5769];
+    unsigned char                  unknown8[5769]; //unknown8[5] == Top Botton Long Press
 } motorola_ht1250;
 #pragma pack()
 
