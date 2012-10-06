@@ -213,6 +213,66 @@ typedef struct
 
 typedef struct
 {
+    unsigned char                   unknown[2];
+    unsigned char                   phone_settings_count;
+    struct
+    { 
+        struct
+        {
+            unsigned char               unknown1:1;
+            unsigned char               unknown2:1;
+            unsigned char               unknown3:1;
+            unsigned char               unknown4:1;
+            unsigned char               ptt_short_sidetone:1;
+            unsigned char               ptt_sidetone:1;
+            unsigned char               unknown7:1;
+            unsigned char               unknown8:1;
+        }                               ptt;
+        unsigned char                   unknown2[1];
+        /* (Value * 25 ms) */
+        unsigned char                   pretime;
+        unsigned char                   unknown3[3];
+        unsigned char                   encoded_access_code[4];
+        unsigned char                   encoded_deaccess_code[4];
+        /* (Value + 1) * 25ms */
+        unsigned char                   tx_tone_duration;
+        /* (Value + 1) * 25ms */
+        unsigned char                   tx_tone_interval;
+        struct
+        {
+            unsigned short              live_dial_type:1;
+            unsigned short              pl_required:1;
+            unsigned short              override_busy_channel_lockout:1;
+            unsigned short              mute_access_deaccess:1;
+            unsigned short              strip_pl:1;
+            /* Multiply value * 0.5s */
+            unsigned short              back_porch_delay:3;
+            unsigned short              unknown9:1;
+            unsigned short              unknown10:1;
+            unsigned short              unknown11:1;
+            unsigned short              unknown12:1;
+            unsigned short              continuous_tone_span:1;
+            /*
+             * 0x00 Immediate Audio
+             * 0x01 Delayed Audio
+             * 0x02 Manual
+             */
+            unsigned short              access_deaccess_type:2;
+            unsigned short              unknown16:1;
+        }                               connection;
+        /* (Value * 25 ms) */
+        unsigned char                   pause_duration;
+        /* (Value * 25 ms) */
+        unsigned char                   tx_hang_time;
+        /* 0 = No Revert, 2 = LS Trunking-1 */
+        unsigned char                   personality;
+        unsigned char                   unknown4[3];
+    }                               settings[1];
+    unsigned char                   checksum;
+} motorola_phone_system;
+
+typedef struct
+{
     unsigned char                  unknown[5];
     char                           serial_num[10];
     char                           null_padding[2];

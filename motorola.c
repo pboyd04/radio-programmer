@@ -181,6 +181,47 @@ int motorola_get_freq_range(void* radio_data_handle, unsigned int* min, unsigned
     return 0;
 }
 
+int motorola_encoded_code_to_str(unsigned char* code, size_t code_len, char* str, size_t max_str_len)
+{
+    char*  tmp = str;
+    size_t j;
+    if(max_str_len < (code_len*2)+1)
+    {
+        return -1;
+    }
+    for(j = 0; j < code_len; j++)
+    {
+        switch((code[j] >> 4) & 0xF)
+        {
+            case 0xA:
+                *tmp = '0';
+                break;
+            case 0xF:
+                *tmp = 0;
+                break;
+            default:
+                *tmp = ((code[j] >> 4) & 0xF) + 0x30;
+                break;
+        }
+        tmp++;
+        switch((code[j]) & 0xF)
+        {
+            case 0xA:
+                *tmp = '0';
+                break;
+            case 0xF:
+                *tmp = 0;
+                break;
+            default:
+                *tmp = ((code[j]) & 0xF) + 0x30;
+                break;
+        }
+        tmp++;
+    }
+    *tmp = 0;
+    return 0;
+}
+
 typedef struct
 {
     const char*   str;
@@ -241,6 +282,8 @@ int main(int argc, char** argv)
     motorola_scan_list_members* scan_members;
     motorola_string_struct* phone_list;
     unsigned char           raw_phone[8];
+    char                    decoded_phone[17];
+    motorola_phone_system*  phone_settings;
 
     if(argc < 2)
     {
@@ -507,45 +550,63 @@ int main(int argc, char** argv)
     {
         memcpy(raw_phone, string_ptr, (size_t)phone_list->string_size);
         string_ptr+=phone_list->string_size;
-        if(raw_phone[0] == 0xFF && raw_phone[1] == 0xFF && raw_phone[2] == 0xFF && raw_phone[3] == 0xFF && 
-           raw_phone[4] == 0xFF && raw_phone[5] == 0xFF && raw_phone[6] == 0xFF && raw_phone[7] == 0xFF)
+        if(raw_phone[0] == 0xFF)
         {
             printf("Phone Number[%u] = None Set\n", i);
         }
         else
         {
-            printf("Phone Number[%u] = ", i);
-            for(j = 0; j < 8; j++)
-            {
-                switch((raw_phone[j] >> 4) & 0xF)
-                {
-                    case 0xA:
-                        printf("0");
-                        break;
-                    case 0xF:
-                        break;
-                    default:
-                        printf("%X", (raw_phone[j] >> 4) & 0xF);
-                        break;
-                }
-                switch((raw_phone[j]) & 0xF)
-                {
-                    case 0xA:
-                        printf("0");
-                        break;
-                    case 0xF:
-                        break;
-                    default:
-                        printf("%X", (raw_phone[j]) & 0xF);
-                        break;
-                }
-            }
-            printf("\n");
+            motorola_encoded_code_to_str(raw_phone, sizeof(raw_phone), decoded_phone, sizeof(decoded_phone)); 
+            printf("Phone Number[%u] = %s\n", i, decoded_phone);
         }
     }
     tmp_ptr = (unsigned char*)string_ptr;
-    printbuffer(tmp_ptr, 30);
-    tmp_ptr += 30;
+    printf("Phone Numbers Checksum = %x\n", *tmp_ptr);
+    tmp_ptr++;
+    phone_settings = (motorola_phone_system*)tmp_ptr;
+    printf("Phone Settings\n");
+    printbuffer(phone_settings->unknown, sizeof(phone_settings->unknown));
+    for(i = 0; i < phone_settings->phone_settings_count; i++)
+    {
+        printf("    Unknown1[%u]                      = %x\n", i, phone_settings->settings[i].ptt.unknown1);
+        printf("    Unknown2[%u]                      = %x\n", i, phone_settings->settings[i].ptt.unknown2);
+        printf("    Unknown3[%u]                      = %x\n", i, phone_settings->settings[i].ptt.unknown3);
+        printf("    Unknown4[%u]                      = %x\n", i, phone_settings->settings[i].ptt.unknown4);
+        printf("    PTT Short Sidetone[%u]            = %x\n", i, phone_settings->settings[i].ptt.ptt_short_sidetone);
+        printf("    PTT Sidetone[%u]                  = %x\n", i, phone_settings->settings[i].ptt.ptt_sidetone);
+        printf("    Unknown7[%u]                      = %x\n", i, phone_settings->settings[i].ptt.unknown7);
+        printf("    Unknown8[%u]                      = %x\n", i, phone_settings->settings[i].ptt.unknown8);
+        printbuffer(phone_settings->settings[0].unknown2, sizeof(phone_settings->settings[i].unknown2));
+        printf("    Pretime[%u]                       = %x\n", i, phone_settings->settings[i].pretime);
+        printbuffer(phone_settings->settings[0].unknown3, sizeof(phone_settings->settings[0].unknown3));
+        motorola_encoded_code_to_str(phone_settings->settings[i].encoded_access_code, sizeof(phone_settings->settings[0].encoded_access_code), decoded_phone, sizeof(decoded_phone)); 
+        printf("    Access Code[%u]                   = %s\n", i, decoded_phone);
+        motorola_encoded_code_to_str(phone_settings->settings[i].encoded_deaccess_code, sizeof(phone_settings->settings[0].encoded_deaccess_code), decoded_phone, sizeof(decoded_phone)); 
+        printf("    Deaccess Code[%u]                 = %s\n", i, decoded_phone);
+        printf("    Tx Tone Duration[%u]              = %x\n", i, phone_settings->settings[i].tx_tone_duration);
+        printf("    Tx Tone Interval[%u]              = %x\n", i, phone_settings->settings[i].tx_tone_interval);
+        printf("    Live Dial Type[%u]                = %x\n", i, phone_settings->settings[i].connection.live_dial_type);
+        printf("    PL Required[%u]                   = %x\n", i, phone_settings->settings[i].connection.pl_required);
+        printf("    Override Busy Channel Lockout[%u] = %x\n", i, phone_settings->settings[i].connection.override_busy_channel_lockout);
+        printf("    Mute Access/Deaccess[%u]          = %x\n", i, phone_settings->settings[i].connection.mute_access_deaccess);
+        printf("    Strip PL[%u]                      = %x\n", i, phone_settings->settings[i].connection.strip_pl);
+        printf("    Back Porch Delay[%u]              = %x\n", i, phone_settings->settings[i].connection.back_porch_delay);
+        printf("    Unknown9[%u]                      = %x\n", i, phone_settings->settings[i].connection.unknown9);
+        printf("    Unknown10[%u]                     = %x\n", i, phone_settings->settings[i].connection.unknown10);
+        printf("    Unknown11[%u]                     = %x\n", i, phone_settings->settings[i].connection.unknown11);
+        printf("    Unknown12[%u]                     = %x\n", i, phone_settings->settings[i].connection.unknown12);
+        printf("    Continuous Tone Span[%u]          = %x\n", i, phone_settings->settings[i].connection.continuous_tone_span);
+        printf("    Access/Deaccess[%u]               = %x\n", i, phone_settings->settings[i].connection.access_deaccess_type);
+        printf("    Unknown16[%u]                     = %x\n", i, phone_settings->settings[i].connection.unknown16);
+        printf("    Pause Duration[%u]                = %x\n", i, phone_settings->settings[i].pause_duration);
+        printf("    Tx Hang Time[%u]                  = %x\n", i, phone_settings->settings[i].tx_hang_time);
+        printf("    Revert Personality[%u]            = %x\n", i, phone_settings->settings[i].personality);
+        printbuffer(phone_settings->settings[i].unknown4, sizeof(phone_settings->settings[i].unknown4));
+    }
+    tmp_ptr = (unsigned char*)(&(phone_settings->settings[i]));
+    tmp_ptr++;
+    printf("Unknown = %x\n", *tmp_ptr);
+    tmp_ptr++;
     string_struct = (motorola_string_struct*)tmp_ptr;
     printf("Phone Assignment Strings\n");
     printf("    Size of Phone Assignment Strings %u\n", string_struct->string_size);
