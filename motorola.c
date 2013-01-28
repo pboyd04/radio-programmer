@@ -181,6 +181,134 @@ int motorola_get_freq_range(void* radio_data_handle, unsigned int* min, unsigned
     return 0;
 }
 
+int motorola_get_bool_val  (void* radio_data_handle, MotorolaBoolValueID id)
+{
+    my_radio_struct* radio_data;
+
+    if(!radio_data_handle)
+    {
+        return -1;
+    }
+    radio_data = (my_radio_struct*)radio_data_handle;
+    switch(id)
+    {
+        case MotorolaBoolValue_VOXHeadset:
+            return radio_data->buff.ht1250.radio_configuration.bitfield.vox_headset;
+            break;
+        case MotorolaBoolValue_AutoPowerMode:
+            return radio_data->buff.ht1250.radio_configuration.bitfield.auto_power_mode;
+            break;
+        case MotorolaBoolValue_RadioRadioCloning:
+            return radio_data->buff.ht1250.radio_configuration.bitfield.cloning;
+            break;
+        case MotorolaBoolValue_TxInhibitQuickKeyOverride:
+            return radio_data->buff.ht1250.radio_configuration.bitfield.tx_override;
+            break;
+        case MotorolaBoolValue_APF:
+            return radio_data->buff.ht1250.radio_configuration.bitfield.audio_processing_filter;
+            break;
+        case MotorolaBoolValue_AutoBacklight:
+            return radio_data->buff.ht1250.radio_configuration.bitfield.auto_backlight;
+            break;
+        case MotorolaBoolValue_BusyLED:
+            return radio_data->buff.ht1250.radio_configuration.bitfield.busy_led;
+            break;
+        case MotorolaBoolValue_TxLowBattPower:
+            return radio_data->buff.ht1250.radio_configuration.bitfield.low_batt_led;
+            break;
+        case MotorolaBoolValue_PowerUpTestLED:
+            return radio_data->buff.ht1250.radio_configuration.bitfield.power_up_led;
+            break;
+    }
+    return -1;
+}
+
+int motorola_set_bool_val  (void* radio_data_handle, MotorolaBoolValueID id, unsigned int val)
+{
+    my_radio_struct* radio_data;
+
+    if(!radio_data_handle)
+    {
+        return -1;
+    }
+    radio_data = (my_radio_struct*)radio_data_handle;
+    switch(id)
+    {
+        case MotorolaBoolValue_VOXHeadset:
+            radio_data->buff.ht1250.radio_configuration.bitfield.vox_headset = val;
+            return 0;
+            break;
+        case MotorolaBoolValue_AutoPowerMode:
+            radio_data->buff.ht1250.radio_configuration.bitfield.auto_power_mode = val;
+            return 0;
+            break;
+        case MotorolaBoolValue_RadioRadioCloning:
+            radio_data->buff.ht1250.radio_configuration.bitfield.cloning = val;
+            return 0;
+            break;
+        case MotorolaBoolValue_TxInhibitQuickKeyOverride:
+            radio_data->buff.ht1250.radio_configuration.bitfield.tx_override = val;
+            return 0;
+            break;
+        case MotorolaBoolValue_APF:
+            radio_data->buff.ht1250.radio_configuration.bitfield.audio_processing_filter = val;
+            return 0;
+            break;
+        case MotorolaBoolValue_AutoBacklight:
+            radio_data->buff.ht1250.radio_configuration.bitfield.auto_backlight = val;
+            return 0;
+            break;
+        case MotorolaBoolValue_BusyLED:
+            radio_data->buff.ht1250.radio_configuration.bitfield.busy_led = val;
+            return 0;
+            break;
+        case MotorolaBoolValue_TxLowBattPower:
+            radio_data->buff.ht1250.radio_configuration.bitfield.low_batt_led = val;
+            return 0;
+            break;
+        case MotorolaBoolValue_PowerUpTestLED:
+            radio_data->buff.ht1250.radio_configuration.bitfield.power_up_led = val;
+            return 0;
+            break;
+    }
+    return -1;
+}
+
+int motorola_get_time_val  (void* radio_data_handle, MotorolaTimeValueID id)
+{
+    my_radio_struct* radio_data;
+
+    if(!radio_data_handle)
+    {
+        return -1;
+    }
+    radio_data = (my_radio_struct*)radio_data_handle;
+    switch(id)
+    {
+        case MotorolaTimeValue_LongPressDuration:
+            return radio_data->buff.ht1250.radio_configuration.bitfield.long_press_time * 500;
+    }
+    return -1;
+}
+
+int motorola_set_time_val  (void* radio_data_handle, MotorolaTimeValueID id, unsigned int val)
+{
+    my_radio_struct* radio_data;
+
+    if(!radio_data_handle)
+    {
+        return -1;
+    }
+    radio_data = (my_radio_struct*)radio_data_handle;
+    switch(id)
+    {
+        case MotorolaTimeValue_LongPressDuration:
+            radio_data->buff.ht1250.radio_configuration.bitfield.long_press_time = val/500;
+            return 0;
+    }
+    return -1;
+}
+
 int motorola_encoded_code_to_str(unsigned char* code, size_t code_len, char* str, size_t max_str_len)
 {
     char*  tmp = str;
@@ -823,6 +951,20 @@ int main(int argc, char** argv)
     }
 
     return 0;
+}
+
+int motorola_get_raw       (void* radio_data_handle, void** raw_data, size_t* size)
+{
+    my_radio_struct* radio_data;
+
+    if(!radio_data_handle || !raw_data || !size)
+    {
+        return -1;
+    }
+    radio_data = (my_radio_struct*)radio_data_handle;
+    *raw_data = radio_data->buff.raw;
+    *size     = sizeof(radio_data->buff);
+    return -1;
 }
 
 /* vim: set tabstop=4 shiftwidth=4 expandtab: */

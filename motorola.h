@@ -458,12 +458,35 @@ typedef struct
 } motorola_ht1250;
 #pragma pack()
 
+typedef enum
+{
+    MotorolaBoolValue_VOXHeadset,
+    MotorolaBoolValue_AutoPowerMode,
+    MotorolaBoolValue_RadioRadioCloning,
+    MotorolaBoolValue_TxInhibitQuickKeyOverride,
+    MotorolaBoolValue_APF,
+    MotorolaBoolValue_AutoBacklight,
+    MotorolaBoolValue_BusyLED,
+    MotorolaBoolValue_TxLowBattPower,
+    MotorolaBoolValue_PowerUpTestLED
+} MotorolaBoolValueID;
+
+typedef enum
+{
+    MotorolaTimeValue_LongPressDuration
+} MotorolaTimeValueID;
+
 DllExport int motorola_get_data      (void* com_port, void** radio_data_handle);
+DllExport int motorola_get_raw       (void* radio_data_handle, void** raw_data, size_t* size);
 DllExport int motorola_get_fw_ver    (void* radio_data_handle, char** fw_ver);
 DllExport int motorola_get_model_num (void* radio_data_handle, char** model_num);
 DllExport int motorola_get_serial_num(void* radio_data_handle, char** serial_num);
 DllExport int motorola_get_cp_info   (void* radio_data_handle, int index, motorola_program_info* info);
 DllExport int motorola_get_freq_range(void* radio_data_handle, unsigned int* min, unsigned int* max);
+DllExport int motorola_get_bool_val  (void* radio_data_handle, MotorolaBoolValueID id);
+DllExport int motorola_set_bool_val  (void* radio_data_handle, MotorolaBoolValueID id, unsigned int val);
+DllExport int motorola_get_time_val  (void* radio_data_handle, MotorolaTimeValueID id);
+DllExport int motorola_set_time_val  (void* radio_data_handle, MotorolaTimeValueID id, unsigned int val);
 
 #endif
 /* vim: set tabstop=4 shiftwidth=4 expandtab: */
